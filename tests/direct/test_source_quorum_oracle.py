@@ -61,3 +61,16 @@ def test_not_expired(direct_vm, direct_deploy, direct_alice):
     c, cid = _new(direct_vm, direct_deploy, direct_alice)
     with direct_vm.expect_revert("not expired"):
         c.expire(cid)
+
+
+def test_long_page_relevant_line_reaches_llm(direct_vm, direct_deploy, direct_alice):
+    """A fact buried deep in a long page must survive the excerpting step."""
+    c, cid = _new(direct_vm, direct_deploy, direct_alice)
+    filler = "\n".join(f"navigation menu item {i} lorem ipsum dolor sit amet" for i in range(2000))
+    body = "Welcome\n" + filler + "\nPython 3.14.0 final was released on 2025-10-07.\n" + filler
+    direct_vm.mock_web(r".*\.example\.com.*", {"status": 200, "body": body})
+    # The LLM mock only matches if the buried sentence made it into the prompt.
+    direct_vm.mock_llm(r"(?s).*checking ONE web source.*3\.14\.0 final was released.*",
+                       json.dumps({"verdict": "YES", "quote": "3.14.0 final was released"}))
+    r = c.resolve(cid)
+    assert r["outcome"] == "YES"

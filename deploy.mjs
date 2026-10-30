@@ -1,4 +1,5 @@
-// Usage: node deploy.mjs <contract.py>   (deploys to Studionet from the dedicated wallet)
+// Usage: node deploy.mjs <contract.py>
+// Deploys to Studionet. Reads the deployer key from ./.wallet ({"privateKey":"0x..."}), which is git-ignored.
 import { readFileSync, appendFileSync } from "node:fs";
 import { createClient, createAccount } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";

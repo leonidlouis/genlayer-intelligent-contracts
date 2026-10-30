@@ -1,11 +1,25 @@
+# secrets — never commit
 .wallet
+*.key
+*.pem
+.env
+.env.*
+!.env.example
+secrets*/
+
+# local tooling / scratch
 node_modules/
 .venv/
+__pycache__/
+.pytest_cache/
+artifacts/
 src-*/
 faucet-src/
 pchunks/
+pchunks2/
 portal.js
 config.json
 ctypes.json
-__pycache__/
-.pytest_cache/
+chunks*.txt
+ADDRESS
+SUBMISSIONS.md
