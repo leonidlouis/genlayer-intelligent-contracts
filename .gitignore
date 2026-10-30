@@ -1,0 +1,11 @@
+.wallet
+node_modules/
+.venv/
+src-*/
+faucet-src/
+pchunks/
+portal.js
+config.json
+ctypes.json
+__pycache__/
+.pytest_cache/
