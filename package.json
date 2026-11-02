@@ -1,10 +1,12 @@
 {
   "name": "genlayer-intelligent-contracts",
   "version": "1.0.0",
-  "description": "Two GenLayer Intelligent Contracts: RubricBounty and SourceQuorumOracle",
+  "description": "GenLayer Intelligent Contracts: RubricBounty, SourceQuorumOracle, ParametricWeatherCover, EvidenceArbiter",
   "scripts": {
     "deploy": "node deploy.mjs",
-    "demo:oracle": "node demo_oracle.mjs"
+    "demo:oracle": "node demo_oracle.mjs",
+    "demo:weather": "node demo_weather.mjs",
+    "demo:arbiter": "node demo_arbiter.mjs"
   },
   "author": "leonidlouis",
   "license": "MIT",

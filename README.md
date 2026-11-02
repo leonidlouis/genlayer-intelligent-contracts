@@ -1,11 +1,13 @@
 # GenLayer Intelligent Contracts
 
-Two Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM judgment and live web data, settled by validator consensus (Optimistic Democracy + a custom Equivalence Principle validator).
+Four Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM judgment and live web data, settled by validator consensus (Optimistic Democracy + a custom Equivalence Principle validator).
 
 | Contract | What it does | Studionet address | Open in Studio |
 |---|---|---|---|
 | [`RubricBounty`](contracts/rubric_bounty.py) | Escrowed bounties paid out when an LLM-graded, weighted rubric score passes | `0xa387cE7ae77ceC30fADBf648A08Cbc8E7B8f7ff3` | [import](https://studio.genlayer.com/?import-contract=0xa387cE7ae77ceC30fADBf648A08Cbc8E7B8f7ff3) · [explorer](https://explorer-studio.genlayer.com/address/0xa387cE7ae77ceC30fADBf648A08Cbc8E7B8f7ff3) |
 | [`SourceQuorumOracle`](contracts/source_quorum_oracle.py) | Yes/no oracle that settles only when several independent web sources agree | `0x3603Bf1CA7eBa8c23976B5A069b425BDb2Bf2e23` | [import](https://studio.genlayer.com/?import-contract=0x3603Bf1CA7eBa8c23976B5A069b425BDb2Bf2e23) · [explorer](https://explorer-studio.genlayer.com/address/0x3603Bf1CA7eBa8c23976B5A069b425BDb2Bf2e23) |
+| [`ParametricWeatherCover`](contracts/parametric_weather_cover.py) | Parametric weather insurance: underwriter pool, premiums priced from 10 years of weather history, payouts settled from observed weather data | `0x2db617aE09422C072cfd0447030c70fac413ac63` | [import](https://studio.genlayer.com/?import-contract=0x2db617aE09422C072cfd0447030c70fac413ac63) · [explorer](https://explorer-studio.genlayer.com/address/0x2db617aE09422C072cfd0447030c70fac413ac63) |
+| [`EvidenceArbiter`](contracts/evidence_arbiter.py) | Two-party escrow with an evidence-based AI arbitration ruling, a percentage split and one bonded appeal | `0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0` | [import](https://studio.genlayer.com/?import-contract=0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0) · [explorer](https://explorer-studio.genlayer.com/address/0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0) |
 
 Network: **GenLayer Studionet** (chain id 61999, RPC `https://studio.genlayer.com/api`). Full deployment log with transaction hashes: [`deployments.jsonl`](deployments.jsonl).
 
@@ -79,6 +81,91 @@ gl.get_contract_at(oracle).view().get_outcome(claim_id)  # "YES" | "NO" | "PENDI
 
 It resolved **YES with 3/3 sources agreeing**, each verdict backed by a quote (for example *"3.14.0 final: Tuesday, 2025-10-07"*).
 
+## ParametricWeatherCover
+
+Parametric weather insurance with no claims adjuster. Underwriters pool GEN liquidity. Buyers cover a location, a date window and a weather trigger, for example *"total rainfall at -6.2, 106.85 from 20 to 28 Oct is at least 50 mm: pay 2 GEN"*. Public weather data decides both the price and the payout, and every validator re-fetches that data.
+
+**Flow**
+1. `create_pool(name, loading_bps, max_policy_bps, allow_backdated)` creates a pool. `deposit(pool_id)` (payable) mints pool shares at the current share price. `withdraw(pool_id, shares)` pays out only **free** liquidity, so active policies stay fully collateralised.
+2. `buy_policy(pool_id, lat_e4, lon_e4, start_date, end_date, metric, trigger_above, threshold_x10, payout)` (payable; attach the most you are willing to pay, and the excess is refunded).
+   - Metrics: `rain_total`, `rain_max_day`, `temp_max`, `temp_min`, `wind_max`. Triggers can be "at or above" or "at or below" (for example frost cover with `temp_min` at or below -10 °C).
+   - **Actuarial pricing (non-deterministic).** The leader pulls the same calendar window for each of the previous 10 years from the [Open-Meteo](https://open-meteo.com) ERA5 historical archive and counts the years that would have triggered. The contract then computes the premium in code: `payout × (2·hits + 1) / (2·(years + 1)) × (1 + loading)`. That is a smoothed trigger frequency, so a clean history never prices at zero.
+   - Cover that triggered in almost every past year is refused as uninsurable. Each policy's payout is capped at `max_policy_bps` of free liquidity, and the payout is locked in the pool.
+3. `settle(policy_id)` can be called by anyone once the window has ended and the data has had 3 days to settle.
+   - **Settlement (non-deterministic).** The leader fetches the observed daily series and aggregates the metric (sum, max or min).
+   - If the trigger is met, the buyer is paid from the locked payout. Otherwise the lock is released and the premium stays with the underwriters.
+   - Missing days (`null`) raise a transient error, so a policy is never settled on partial data.
+4. `void(policy_id)` refunds the premium if no data is available 45 days after the window ends.
+
+**Consensus (custom validators)**
+- *Pricing:* validators re-fetch the 10-year history. A validator agrees only if:
+  - the leader's hit count follows from the leader's own per-year values,
+  - the year counts match, and
+  - the hit counts differ by at most 1.
+- *Settlement:* validators re-fetch the window. A validator agrees only if:
+  - the triggered / not-triggered verdict matches,
+  - the leader's verdict follows from the leader's own value and the policy threshold, and
+  - the values are within max(0.5 units, 3% of the threshold).
+
+**Accounting.** `balance = free + locked`. Premiums raise the share price and paid claims lower it. Per-pool `premiums_earned`, `claims_paid` and `locked` are stored on-chain. The per-year history behind each premium is stored on the policy, so buyers can audit their price.
+
+`allow_backdated` lets windows start in the past. It exists **only for demo and test pools**, because a buyer who already knows the weather could drain the pool. Production pools set it to `false`, which requires windows to start after today (UTC).
+
+**Views:** `get_pool`, `get_policy` (includes the pricing history and the observed value), `get_shares`, `get_counts`.
+
+**Live demo (Studionet, `node demo_weather.mjs 0x2db6…ac63`).** The demo created pool #0 with a 10% loading, deposited 20 GEN and bought policy #0: Jakarta (-6.2, 106.85), total rainfall 2026-10-20 to 2026-10-28 at or above 50 mm, paying 2 GEN.
+- *Pricing* ([`0xdecf2b75…7045`](https://explorer-studio.genlayer.com/tx/0xdecf2b754baf594d52c143e470486bdd87e7f30ffaec2ffc91f1016008547045)): the 10-year history (2016-2025) gave 177.8, 35.4, 58.3, 16.4, 64.2, 74.2, 82.3, 26.6, 12.6 and 100.9 mm. That is **6 of 10 years triggered**, for a **premium of 1.3 GEN**. Consensus was reached with validators agreeing.
+- *Settlement* ([`0x8b1fb9a6…d35d`](https://explorer-studio.genlayer.com/tx/0x8b1fb9a6d66537fa8c24709df4a7a5756c3dc5e5ecab648b0513018e1c53d35d)): the observed total was **57.1 mm, at or above 50 mm, so the policy was PAID**. The buyer received 2 GEN and the lock was released.
+- The pool ended with a 19.3 GEN balance (20 + 1.3 premium − 2 claim). The transaction was finalized.
+
+## EvidenceArbiter
+
+A two-party escrow for freelance and service deals. Disputes go to an evidence-reading AI court instead of a trusted middleman, with one bonded appeal.
+
+**Flow**
+1. `propose(payee, title, terms, evidence_window, appeal_window)` (payable): the payer escrows GEN against written terms. The agreement only binds once the payee calls `accept`. Before that, the payer can `cancel`.
+2. Happy paths need no AI. The payer can `release` (100% to the payee), or the payee can `refund` (100% to the payer).
+3. `dispute(id, statement)`: either party freezes the escrow and opens an evidence window. During the window:
+   - both sides can file a position with `state_position`,
+   - each side can file up to 3 https evidence links (`submit_evidence`), and
+   - each side can mark `ready`.
+4. `rule(id)` can be called once both sides are ready or the window has closed.
+   - **Ruling (non-deterministic).** The leader fetches every evidence link as rendered text and fences each item as untrusted data, with the delimiters neutralised so evidence cannot close its own fence.
+   - The LLM applies the **terms** obligation by obligation and returns the payee's share (0-100%), per-obligation findings and its reasoning.
+   - The contract derives the outcome in code: at least 60 is `PAYEE`, at most 40 is `PAYER`, anything else is `SPLIT`.
+5. `appeal(id, reason)` (payable, bond = 10% of the escrow).
+   - Only the side that received less can appeal (either side on an exact 50/50), and only within the appeal window.
+   - A rebuttal round opens. Then `rule` runs again as an appeal panel that sees the first ruling and the appeal reason, and is told not to split the difference by default.
+   - The appeal ruling is final and pays out immediately.
+   - If it moves the split at least 10 points toward the appellant, the bond is returned. Otherwise the bond goes to the other side.
+6. `finalize(id)` pays out an unappealed ruling after its appeal window closes.
+
+**Consensus (custom validator).** Each validator re-fetches the evidence and re-judges the case independently. A validator agrees only if:
+- the outcome bucket is the same,
+- the leader's outcome follows from the leader's own share, and
+- the shares differ by at most 10 points.
+
+**Safety**
+- Statements, notes and evidence are all fenced as untrusted data. The model is told to treat injected instructions as a point *against* the party that filed them, and to prefer independent, verifiable facts over a party's own claims.
+- Outsiders cannot act on an agreement.
+- The amounts are split in code from the final percentage.
+
+**Views:** `get_agreement` (terms, statements, evidence, both rulings with findings, final split), `get_agreement_count`.
+
+**Live demo (Studionet, `node demo_arbiter.mjs 0x53De…d9b0`)**
+
+The setup was agreement #1 with a 4 GEN escrow:
+- Terms: a README for the "tidepool" CLI with 4 required sections, each missing section costing 25 points.
+- The payee (a throwaway account) delivered [`tidepool-README.md`](examples/evidence-arbiter-demo/tidepool-README.md), which has no API reference, along with a [delivery note](examples/evidence-arbiter-demo/delivery-note.md) asking for full pay.
+- The payer disputed, and both sides filed statements and evidence.
+
+What happened:
+- *First ruling* ([`0x9ea9ff5b…8521`](https://explorer-studio.genlayer.com/tx/0x9ea9ff5b29b8e92906ecc315686aaa2ef2aaa5e0379a1f2bc948d401ae608521)): **payee 75% (PAYEE)**. The findings marked Installation, Usage (3 examples) and License as met, and the API reference as not met because *"E2 admits omission"*. Consensus was reached with validators agreeing.
+- *Appeal:* the payer posted a 0.4 GEN bond, arguing that a missing configuration section should lower the payment further.
+- *Appeal ruling* ([`0x84476b65…5cd`](https://explorer-studio.genlayer.com/tx/0x84476b65eb7c9608807ebd2afad8a2f13f46093c3b35456880a92c59b0a615cd)): **75% upheld**, because *"configuration options … not a requirement in the agreed terms"*.
+- The escrow was paid out 3 GEN to the payee and 1 GEN to the payer, and the bond went to the payee. Status `SETTLED`, finalized.
+
+
 ---
 
 ## Running it
@@ -90,7 +177,7 @@ Requirements: Python 3.12+ and Node 18+.
 python -m venv .venv && .venv/bin/pip install genlayer-test genvm-linter   # tested with genlayer-test 0.29.2
 npm install
 
-# Lint / validate both contracts
+# Lint / validate all contracts
 for f in contracts/*.py; do .venv/bin/genvm-lint check "$f"; done
 
 # Unit tests (direct mode, mocked web + LLM, no network needed)
@@ -104,6 +191,8 @@ Create a `.wallet` file, which is git-ignored, containing a test key: `{"private
 ```bash
 node deploy.mjs contracts/source_quorum_oracle.py           # prints the new address
 node demo_oracle.mjs <SourceQuorumOracle address>           # ask + resolve the demo claim
+node demo_weather.mjs <ParametricWeatherCover address>      # pool, priced policy, settlement
+node demo_arbiter.mjs <EvidenceArbiter address>             # agreement, dispute, ruling, appeal
 ```
 
 To try a contract without any setup, open its **Studio import link** from the table above in [GenLayer Studio](https://studio.genlayer.com) and call its methods from the UI.
@@ -113,8 +202,11 @@ To try a contract without any setup, open its **Studio import link** from the ta
 ```
 contracts/rubric_bounty.py          RubricBounty
 contracts/source_quorum_oracle.py   SourceQuorumOracle
-tests/direct/                       direct-mode unit tests (13)
-deploy.mjs / demo_oracle.mjs        genlayer-js deploy + demo scripts
+contracts/parametric_weather_cover.py  ParametricWeatherCover
+contracts/evidence_arbiter.py       EvidenceArbiter
+tests/direct/                       direct-mode unit tests (33)
+deploy.mjs / demo_*.mjs             genlayer-js deploy + demo scripts
+examples/evidence-arbiter-demo/     evidence files used by the EvidenceArbiter demo
 deployments.jsonl                   deployment log (Studionet)
 ```
 
