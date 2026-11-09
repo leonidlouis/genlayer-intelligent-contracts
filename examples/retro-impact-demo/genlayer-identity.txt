@@ -1,0 +1,3 @@
+GenLayer RetroImpactPool identity proof
+github: leonidlouis
+wallet: 0x3E45f4E55Ce1d0FA5a4aF45EC8B33Cfc4dB23C85
