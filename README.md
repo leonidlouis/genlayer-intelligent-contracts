@@ -1,6 +1,6 @@
 # GenLayer Intelligent Contracts
 
-Four Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM judgment and live web data, settled by validator consensus (Optimistic Democracy + a custom Equivalence Principle validator).
+Six Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM judgment and live web data, settled by validator consensus (Optimistic Democracy + a custom Equivalence Principle validator).
 
 | Contract | What it does | Studionet address | Open in Studio |
 |---|---|---|---|
@@ -8,6 +8,8 @@ Four Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM jud
 | [`SourceQuorumOracle`](contracts/source_quorum_oracle.py) | Yes/no oracle that settles only when several independent web sources agree | `0x3603Bf1CA7eBa8c23976B5A069b425BDb2Bf2e23` | [import](https://studio.genlayer.com/?import-contract=0x3603Bf1CA7eBa8c23976B5A069b425BDb2Bf2e23) · [explorer](https://explorer-studio.genlayer.com/address/0x3603Bf1CA7eBa8c23976B5A069b425BDb2Bf2e23) |
 | [`ParametricWeatherCover`](contracts/parametric_weather_cover.py) | Parametric weather insurance: underwriter pool, premiums priced from 10 years of weather history, payouts settled from observed weather data | `0x2db617aE09422C072cfd0447030c70fac413ac63` | [import](https://studio.genlayer.com/?import-contract=0x2db617aE09422C072cfd0447030c70fac413ac63) · [explorer](https://explorer-studio.genlayer.com/address/0x2db617aE09422C072cfd0447030c70fac413ac63) |
 | [`EvidenceArbiter`](contracts/evidence_arbiter.py) | Two-party escrow with an evidence-based AI arbitration ruling, a percentage split and one bonded appeal | `0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0` | [import](https://studio.genlayer.com/?import-contract=0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0) · [explorer](https://explorer-studio.genlayer.com/address/0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0) |
+| [`RetroImpactPool`](contracts/retro_impact_pool.py) | Retroactive funding for an open-source repo: the pool is split between authors of merged PRs by LLM-judged impact against the funder's priorities, with GitHub-to-wallet proof links | `0xb2420398F76d0D5A474579843B38F98a75286Dd4` | [import](https://studio.genlayer.com/?import-contract=0xb2420398F76d0D5A474579843B38F98a75286Dd4) · [explorer](https://explorer-studio.genlayer.com/address/0xb2420398F76d0D5A474579843B38F98a75286Dd4) |
+| [`SlaUptimeBond`](contracts/sla_uptime_bond.py) | SLA with a provider bond: live health probes plus an LLM reading of the public status feed against the written SLA scope; uptime and service credits computed in code | `0xE400a078e3514Ab0143e7E078fB7d08790C7C07b` | [import](https://studio.genlayer.com/?import-contract=0xE400a078e3514Ab0143e7E078fB7d08790C7C07b) · [explorer](https://explorer-studio.genlayer.com/address/0xE400a078e3514Ab0143e7E078fB7d08790C7C07b) |
 
 Network: **GenLayer Studionet** (chain id 61999, RPC `https://studio.genlayer.com/api`). Full deployment log with transaction hashes: [`deployments.jsonl`](deployments.jsonl).
 
@@ -166,6 +168,74 @@ What happened:
 - The escrow was paid out 3 GEN to the payee and 1 GEN to the payer, and the bond went to the payee. Status `SETTLED`, finalized.
 
 
+## RetroImpactPool
+
+Retroactive public-goods funding for one open-source repository. Nobody applies and the funder does not hand-pick winners: after a merge window closes, the pool is split between the people whose pull requests were actually merged, weighted by how much each PR advanced the funder's written priorities.
+
+**Flow**
+1. `create_round(repo, priorities, window_start, window_end, claim_seconds)` (payable). The funder escrows the pool for `owner/name`, a 1-31 day merge window (UTC days) and up to 2000 chars of priorities.
+2. `link_github(login, proof_url)`. A contributor binds a GitHub login to their wallet by publishing a file that contains their address in a repository **owned by that login** (`https://raw.githubusercontent.com/<login>/...`). The owner segment is checked in code; the file is read non-deterministically and validators must agree exactly.
+3. `allocate(round_id)`, callable by anyone once the window is over.
+   - **Data (non-deterministic).** The leader reads the merged PRs from the GitHub search API. Bots are dropped in code; more than 30 PRs is rejected so the set is always complete.
+   - **Judgment (non-deterministic).** The LLM rates every PR on a fixed 4-tier scale against the fenced priorities: 0 noise, 1 minor, 2 substantial, 3 major, with a one-line reason.
+   - **Money in code.** Tier weights 0/1/3/6 are summed per author and turned into basis-point shares (rounding remainder to the top author). The LLM never outputs an amount. If no PR carries weight, the pool goes straight back to the funder.
+4. `claim(round_id, login)` pays a linked author's share to the linked wallet during the claim window. Anyone can trigger it; funds only go to the wallet bound to the login.
+5. `sweep(round_id)` returns unclaimed shares (unlinked or idle authors) to the funder after the claim window.
+
+**Consensus (custom validator).** Each validator re-reads the PR list and re-judges every PR independently. A validator agrees only if:
+- its PR set and authors are identical to the leader's,
+- the leader's shares follow exactly from the leader's own tiers,
+- every author's share is within 15 points of its own, and
+- the total variation between the two splits is at most 20 points.
+
+**Safety**
+- PR titles and descriptions are fenced as untrusted data with the delimiters neutralised; the model is told to ignore instructions and self-praise in them.
+- Wallet binding needs write access to a repo owned by the login, so nobody can claim someone else's share.
+- Shares, per-PR tiers and reasons are stored on-chain, so every author can see why they got what they got.
+
+**Views:** `get_round` (PRs with tiers and reasons, shares, claims), `get_link`, `get_round_count`.
+
+**Live demo (Studionet, `node demo_retro.mjs 0xb242…6Dd4`).** Round #0: 5 GEN for `genlayerlabs/genlayer-studio`, PRs merged 2026-10-12 to 2026-11-01, priorities = consensus/appeal and state correctness, validator stability, fee accounting and security; release chores and example tweaks worth little.
+- *Allocation* ([`0x85be1077…c2d5`](https://explorer-studio.genlayer.com/tx/0x85be10770b753c680b192933c41396fad876fc015204a732c3a318e814adc2d5)): 9 real PRs by 3 authors. #1784 fee appeal-capacity fix, #1792 finalized-storage reads and #1796 consensus accepted-state fix rated **major**; #1797 release bundle **minor**; #1798 example prompt tweak **noise**. Split: **muncleuscles 38.72%, danieljrc888 32.25%, kp2pml30 29.03%**. Validators agreed; finalized.
+- *Identity link* ([`0xb6732405…b953`](https://explorer-studio.genlayer.com/tx/0xb6732405a240263dba24be9861f35af3080ed9de1dfc4dc3f9e2db8987d4b953)): `leonidlouis` bound to the deployer wallet via [`examples/retro-impact-demo/genlayer-identity.txt`](examples/retro-impact-demo/genlayer-identity.txt).
+- *Sweep* ([`0x49bce1c9…1c38`](https://explorer-studio.genlayer.com/tx/0x49bce1c9643bf23fd9ec0a612b9d74ea156049031c18d70b458d29540d041c38)): none of the three authors linked a wallet within the 10-minute demo claim window, so the full 5 GEN returned to the funder. Round `CLOSED`.
+- Round creation: [`0x2e44a6a7…ad69`](https://explorer-studio.genlayer.com/tx/0x2e44a6a78d387912edd9055fed716d71b28db08fc773275bcfc6021647a0ad69).
+
+## SlaUptimeBond
+
+A service-level agreement that pays its own service credits. The provider backs the SLA with a bond; credits are decided from public evidence instead of the provider's goodwill.
+
+**Flow**
+1. `offer(customer, service, scope, status_url, health_url, health_expect, target_bps, period_start, period_end, probe_interval)` (payable). The provider posts the bond and the written SLA scope (which components count, what is an outage vs degraded, what is excluded).
+2. `accept(id)` (payable). Only the named customer can accept, paying the service fee into escrow. The provider can `cancel` an unaccepted offer.
+3. `probe(id)`, callable by anyone during the period, at most once per `probe_interval`.
+   - **Non-deterministic.** The leader GETs the health URL: UP if the status is below 400 and the expected text is present. Validators probe independently and must see the same UP/DOWN.
+   - Each failed probe counts `probe_interval` of downtime, so a provider cannot hide an outage behind a green status page.
+4. `assess(id)`, callable by anyone 5 minutes after the period ends.
+   - **Atlassian Statuspage feeds** (`/api/v2/incidents.json`): incident times, components and updates are parsed in code; the LLM only classifies each incident against the fenced scope as `outage`, `degraded`, `maintenance` or `out_of_scope`.
+   - **Any other status page**: the LLM extracts the incidents (ISO start/end and class) from the rendered text, and invalid rows are dropped in code.
+   - **In code:** intervals are clipped to the period and merged (outage wins over degraded), degraded minutes count 50%, and the larger of reported and probe-measured downtime is used. Uptime in bps then maps to the credit tier by shortfall below target: 0 → 0%, ≤0.5 pt → 10%, ≤4 pt → 25%, ≤9 pt → 50%, beyond → 100% of the bond.
+   - Settlement is immediate: the credit goes to the customer, and the rest of the bond plus the fee go to the provider.
+
+**Consensus (custom validators)**
+- *Probe:* validators re-probe; agree only on the same UP/DOWN.
+- *Assessment:* validators re-read the feed and re-classify independently. A validator agrees only if:
+  - the leader's weighted downtime and credit tier follow from the leader's own incident list,
+  - the credit tier is identical to its own, and
+  - weighted downtime is within max(90 min, 25%).
+
+**Safety**
+- Status-page text is fenced as untrusted data; the model is told to classify by what broke for users, not by the provider's own impact label.
+- The LLM never outputs minutes or money: timestamps come from the feed (or are parsed and validated in code) and all arithmetic is deterministic.
+- The full incident list with classes and reasons is stored in the settlement report.
+
+**Views:** `get_sla` (probes, failed probe times, settlement report), `get_sla_count`, `credit_table`.
+
+**Live demo (Studionet, `node demo_sla.mjs 0xE400…C07b`).** SLA #0: provider = deployer, customer = a throwaway account. Service "GitHub core (demo)": Git Operations, API Requests, Pull Requests, Issues and Webhooks in scope; Actions, Pages, Copilot, Dependabot and others out of scope; target 99.90%. Period 2026-10-26 00:00 UTC to 2026-11-09 03:31 UTC, bond 4 GEN, fee 0.5 GEN. Health endpoint `https://github.com/robots.txt`; status feed `https://www.githubstatus.com/api/v2/incidents.json`.
+- Offer [`0x938b0200…6bdc`](https://explorer-studio.genlayer.com/tx/0x938b020054f0bcc53dbdd59f9fe6cb7bf03c4127b161e03f4f255a85ec076bdc), accept [`0xc8bcd248…2d0d`](https://explorer-studio.genlayer.com/tx/0xc8bcd248f413a181e3b5a94a4cc181ccc70371fd46de07a4ad4b78011bf42d0d).
+- *Probes* ([`0xf11beca8…5418`](https://explorer-studio.genlayer.com/tx/0xf11beca87c8fe2f693759c75fdc6fc584ac1b939fd9f0d423882c676e6d95418), [`0xe701b3a6…8c01`](https://explorer-studio.genlayer.com/tx/0xe701b3a6acbf778d694b63ea677e30058b40bcfc127d1b0a118bb6f5fc188c01)): both UP, validators agreed.
+- *Assessment* ([`0x4d1ab6d1…fe2b`](https://explorer-studio.genlayer.com/tx/0x4d1ab6d1235c090cc89d1b3988162cafbd246d96c489cf281c2e50f37ee1fe2b)): 17 real GitHub incidents overlapped the period. 7 were classed **out of scope** (Copilot, Actions-only, Dependabot), 8 **degraded** (e.g. Git HTTPS slowness on Nov 3, PR/Git/Issues on Nov 4, API timeouts on Nov 8), 2 **outage** (Issues disruption on Oct 30, plus a zero-length backdated entry). Result: 31 outage + 573 degraded minutes = **317 weighted minutes**, **uptime 98.44%** vs 99.90% target, **25% credit**. The customer received 1 GEN; the provider got 3 GEN of bond back plus the 0.5 GEN fee. Validators agreed; finalized.
+
 ---
 
 ## Running it
@@ -193,6 +263,8 @@ node deploy.mjs contracts/source_quorum_oracle.py           # prints the new add
 node demo_oracle.mjs <SourceQuorumOracle address>           # ask + resolve the demo claim
 node demo_weather.mjs <ParametricWeatherCover address>      # pool, priced policy, settlement
 node demo_arbiter.mjs <EvidenceArbiter address>             # agreement, dispute, ruling, appeal
+node demo_retro.mjs <RetroImpactPool address>                # funded round, allocation, identity link, sweep
+node demo_sla.mjs <SlaUptimeBond address>                    # SLA offer, live probes, status-feed assessment
 ```
 
 To try a contract without any setup, open its **Studio import link** from the table above in [GenLayer Studio](https://studio.genlayer.com) and call its methods from the UI.
@@ -204,9 +276,12 @@ contracts/rubric_bounty.py          RubricBounty
 contracts/source_quorum_oracle.py   SourceQuorumOracle
 contracts/parametric_weather_cover.py  ParametricWeatherCover
 contracts/evidence_arbiter.py       EvidenceArbiter
-tests/direct/                       direct-mode unit tests (33)
+contracts/retro_impact_pool.py      RetroImpactPool
+contracts/sla_uptime_bond.py        SlaUptimeBond
+tests/direct/                       direct-mode unit tests (55)
 deploy.mjs / demo_*.mjs             genlayer-js deploy + demo scripts
 examples/evidence-arbiter-demo/     evidence files used by the EvidenceArbiter demo
+examples/retro-impact-demo/         GitHub identity proof used by the RetroImpactPool demo
 deployments.jsonl                   deployment log (Studionet)
 ```
 

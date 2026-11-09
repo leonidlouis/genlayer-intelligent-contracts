@@ -1,12 +1,16 @@
 {
   "name": "genlayer-intelligent-contracts",
   "version": "1.0.0",
-  "description": "GenLayer Intelligent Contracts: RubricBounty, SourceQuorumOracle, ParametricWeatherCover, EvidenceArbiter",
+  "description": "GenLayer Intelligent Contracts: RubricBounty, SourceQuorumOracle, ParametricWeatherCover, EvidenceArbiter, RetroImpactPool, SlaUptimeBond",
   "scripts": {
     "deploy": "node deploy.mjs",
     "demo:oracle": "node demo_oracle.mjs",
     "demo:weather": "node demo_weather.mjs",
-    "demo:arbiter": "node demo_arbiter.mjs"
+    "demo:arbiter": "node demo_arbiter.mjs",
+    "demo:retro": "node demo_retro.mjs",
+    "demo:sla": "node demo_sla.mjs",
+    "test": ".venv/bin/pytest tests/direct -q",
+    "lint": "for f in contracts/*.py; do .venv/bin/genvm-lint check \"$f\" || exit 1; done"
   },
   "author": "leonidlouis",
   "license": "MIT",
