@@ -6,3 +6,5 @@
 {"file":"contracts/evidence_arbiter.py","network":"studionet","tx":"0xaaa2f9730558ba315e17b48b79be23f8c6f7dcadfb9c72833615f34439a0cc02","address":"0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0","at":"2026-11-02T03:12:56.910Z"}
 {"file":"contracts/retro_impact_pool.py","network":"studionet","tx":"0x7656c451e2d69956728d34a891c812db001256b4999c8a07a5b7b1ce9ee38397","address":"0xb2420398F76d0D5A474579843B38F98a75286Dd4","at":"2026-11-09T03:23:37.481Z"}
 {"file":"contracts/sla_uptime_bond.py","network":"studionet","tx":"0x7ca95c2bbc567702d55cac4f1410ce5d8397bbea5e6340bf86ebae347d6249cf","address":"0xE400a078e3514Ab0143e7E078fB7d08790C7C07b","at":"2026-11-09T03:24:20.997Z"}
+{"file":"contracts/scalar_forecast_pool.py","network":"studionet","tx":"0x024c6e9e0b764d4ce04c204e9e1739c4920aa443ebcefcc7a8285337616061dd","address":"0xcbbF46daE1d0e07b4cbA58676b8eE1600893d1dE","at":"2026-11-16T03:34:40.392Z"}
+{"file":"contracts/original_work_registry.py","network":"studionet","tx":"0xe74a98bb77e37f38e8366d836b3e45fdeeceadf635a864fc47728d3700f34e73","address":"0x1F444Be29dcDB7De8538Bd93a3d2f8956d351a41","at":"2026-11-16T03:35:17.905Z"}

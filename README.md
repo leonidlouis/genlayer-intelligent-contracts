@@ -1,6 +1,6 @@
 # GenLayer Intelligent Contracts
 
-Six Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM judgment and live web data, settled by validator consensus (Optimistic Democracy + a custom Equivalence Principle validator).
+Eight Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM judgment and live web data, settled by validator consensus (Optimistic Democracy + a custom Equivalence Principle validator).
 
 | Contract | What it does | Studionet address | Open in Studio |
 |---|---|---|---|
@@ -10,6 +10,8 @@ Six Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM judg
 | [`EvidenceArbiter`](contracts/evidence_arbiter.py) | Two-party escrow with an evidence-based AI arbitration ruling, a percentage split and one bonded appeal | `0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0` | [import](https://studio.genlayer.com/?import-contract=0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0) · [explorer](https://explorer-studio.genlayer.com/address/0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0) |
 | [`RetroImpactPool`](contracts/retro_impact_pool.py) | Retroactive funding for an open-source repo: the pool is split between authors of merged PRs by LLM-judged impact against the funder's priorities, with GitHub-to-wallet proof links | `0xb2420398F76d0D5A474579843B38F98a75286Dd4` | [import](https://studio.genlayer.com/?import-contract=0xb2420398F76d0D5A474579843B38F98a75286Dd4) · [explorer](https://explorer-studio.genlayer.com/address/0xb2420398F76d0D5A474579843B38F98a75286Dd4) |
 | [`SlaUptimeBond`](contracts/sla_uptime_bond.py) | SLA with a provider bond: live health probes plus an LLM reading of the public status feed against the written SLA scope; uptime and service credits computed in code | `0xE400a078e3514Ab0143e7E078fB7d08790C7C07b` | [import](https://studio.genlayer.com/?import-contract=0xE400a078e3514Ab0143e7E078fB7d08790C7C07b) · [explorer](https://explorer-studio.genlayer.com/address/0xE400a078e3514Ab0143e7E078fB7d08790C7C07b) |
+| [`ScalarForecastPool`](contracts/scalar_forecast_pool.py) | Staked forecasting on a numeric real-world value (point + 80% interval), resolved from 1-3 web sources by LLM extraction + median/agreement in code, paid by an interval scoring rule | `0xcbbF46daE1d0e07b4cbA58676b8eE1600893d1dE` | [import](https://studio.genlayer.com/?import-contract=0xcbbF46daE1d0e07b4cbA58676b8eE1600893d1dE) · [explorer](https://explorer-studio.genlayer.com/address/0xcbbF46daE1d0e07b4cbA58676b8eE1600893d1dE) |
+| [`OriginalWorkRegistry`](contracts/original_work_registry.py) | Registry of original works with licence terms and staked infringement bounties; claims decided from live pages by code-computed shingle overlap + LLM licence judgment | `0x1F444Be29dcDB7De8538Bd93a3d2f8956d351a41` | [import](https://studio.genlayer.com/?import-contract=0x1F444Be29dcDB7De8538Bd93a3d2f8956d351a41) · [explorer](https://explorer-studio.genlayer.com/address/0x1F444Be29dcDB7De8538Bd93a3d2f8956d351a41) |
 
 Network: **GenLayer Studionet** (chain id 61999, RPC `https://studio.genlayer.com/api`). Full deployment log with transaction hashes: [`deployments.jsonl`](deployments.jsonl).
 
@@ -236,6 +238,72 @@ A service-level agreement that pays its own service credits. The provider backs 
 - *Probes* ([`0xf11beca8…5418`](https://explorer-studio.genlayer.com/tx/0xf11beca87c8fe2f693759c75fdc6fc584ac1b939fd9f0d423882c676e6d95418), [`0xe701b3a6…8c01`](https://explorer-studio.genlayer.com/tx/0xe701b3a6acbf778d694b63ea677e30058b40bcfc127d1b0a118bb6f5fc188c01)): both UP, validators agreed.
 - *Assessment* ([`0x4d1ab6d1…fe2b`](https://explorer-studio.genlayer.com/tx/0x4d1ab6d1235c090cc89d1b3988162cafbd246d96c489cf281c2e50f37ee1fe2b)): 17 real GitHub incidents overlapped the period. 7 were classed **out of scope** (Copilot, Actions-only, Dependabot), 8 **degraded** (e.g. Git HTTPS slowness on Nov 3, PR/Git/Issues on Nov 4, API timeouts on Nov 8), 2 **outage** (Issues disruption on Oct 30, plus a zero-length backdated entry). Result: 31 outage + 573 degraded minutes = **317 weighted minutes**, **uptime 98.44%** vs 99.90% target, **25% credit**. The customer received 1 GEN; the provider got 3 GEN of bond back plus the 0.5 GEN fee. Validators agreed; finalized.
 
+## ScalarForecastPool
+
+Forecasting on a **number**, not a yes/no question. Forecasters stake GEN on a point estimate plus an 80% interval; the outcome is read from public web sources after the deadline, and the pot is split by a proper interval scoring rule computed in code.
+
+**Flow**
+1. `create_round(metric, spec, unit, decimals, sources, deadline, agree_bps, min_sources, scale_bps, resolve_ttl)` (payable, optional subsidy). The creator defines the metric, a binding resolution spec, the fixed-point precision (values are integers × 10^decimals), 1-3 `https://` sources, how far apart sources may be (`agree_bps`), how many must report (`min_sources`), the score scale and how long resolution may take.
+2. `forecast(round_id, point, low, high)` (payable stake ≥ 0.001 GEN). One forecast per address before the deadline, with `low ≤ point ≤ high` (the 80% central interval).
+3. `resolve(round_id)`, callable by anyone after the deadline (60 s cooldown between attempts).
+   - **Data (non-deterministic).** The leader fetches every source (JSON/CSV as-is, HTML rendered to text, long pages cut to a query-focused excerpt).
+   - **Judgment (non-deterministic).** The LLM extracts the figure from each fenced source against the spec and quotes it, or says it is not published.
+   - **In code.** The number is parsed to fixed point (half-up); a value whose digits do not literally appear in the fetched text is discarded (anti-hallucination). The outcome is the **median** of the reported values, and the round resolves only if at least `min_sources` reported and the spread (max − min) is within `agree_bps` of the median. Otherwise the attempt is recorded (`NO_QUORUM` / `DISAGREE`) and the round stays open.
+4. **Payouts in code.** Penalty = interval score (width + 10 × distance outside the 80% interval, Gneiting–Raftery with α = 0.2) + 2 × |point − outcome|, in bps of the outcome, divided by `scale_bps`; quality q = 1/(1 + penalty)². The pot (stakes + subsidy) is split pro rata to stake × q, rounding dust to the creator. Sharp, correct forecasts win; confident misses are punished harder than honest wide intervals.
+5. `void(round_id)` after `deadline + resolve_ttl` if the sources never agreed: every stake and the subsidy are refunded.
+
+**Consensus (custom validator).** Each validator re-fetches and re-extracts every source. It agrees only if:
+- the leader's per-source list covers exactly the round's sources,
+- the leader's status and median follow exactly from the leader's own per-source values,
+- its own status is the same, and
+- if resolved, its median is within `agree_bps` (min. 1 unit) of the leader's.
+
+**Safety**
+- Source text is fenced as untrusted data with the delimiters neutralised; the model is told to ignore instructions and fake values in it.
+- The LLM only returns the number *as written*; it never sees stakes or outputs money. Every payout is integer arithmetic.
+- Per-source raw values, parsed values and quotes are stored for every attempt.
+
+**Views:** `get_round` (evidence, outcome, payouts), `get_forecast`, `preview_payouts(round_id, outcome)`, `get_round_count`.
+
+**Live demo (Studionet, `node demo_forecast.mjs 0xcbbF…d1dE`).** Round #0: *ECB euro reference rate, USD per EUR, for 2026-11-13*, 4 decimals, sources = ECB Data Portal API (CSV) and Frankfurter (JSON), both required, agreement within 10 bps, score scale 50 bps, 1 GEN subsidy.
+- *Round + forecasts* ([`0x71ab9cb7…2561`](https://explorer-studio.genlayer.com/tx/0x71ab9cb7e9c9d8fc5f79a5b503a70d63a7c5d7fb39b4e6a7e5ab34fbbebb2561), [`0x31b18750…36f6`](https://explorer-studio.genlayer.com/tx/0x31b18750afdbcba021a0464200cb37a445b7b241102559e104c507a04c6b36f6), [`0x6317461d…e1a0`](https://explorer-studio.genlayer.com/tx/0x6317461d973bd2da7270ce0dc3c94575c65c6d4ddbcf66f9132e5075e94be1a0)): A staked 1 GEN on 1.1040 [1.1000, 1.1080]; B staked 0.5 GEN on 1.1150 [1.1120, 1.1180].
+- *Resolution* ([`0x508e688c…090b`](https://explorer-studio.genlayer.com/tx/0x508e688c73b20a443e3eec8cdc6d36fdb547c6ca14035b3cbd700c65da02090b)): both sources read **1.1052** (ECB CSV row `…,2026-11-13,1.1052,…`; Frankfurter `"USD":1.1052`), spread 0 bps → outcome **11052**. A (inside its interval, 12 units off) scored q ≈ 0.121; B (missed its interval by 68 units) q ≈ 0.003. Payouts from the 2.5 GEN pot: **A 2.468 GEN, B 0.032 GEN**. Validators agreed (3/3); finalized.
+
+## OriginalWorkRegistry
+
+Plagiarism and licence enforcement for written work. Creators register a work with its licence terms and stake a bounty; anyone who finds an unlicensed copy files a bonded claim, and the claim is decided from the live pages.
+
+**Flow**
+1. `register_work(title, canonical_url, licence, licensees, bounty, claim_bond, min_overlap_bps)` (payable stake ≥ one bounty). Licence terms are plain words (e.g. CC BY-NC with credit + link); `licensees` are domains allowed to republish. `top_up`, `add_licensee` and `close_work` (refunds the free stake when nothing is pending) manage it.
+2. `file_claim(work_id, suspect_url, note)` (payable bond ≥ `claim_bond`). Checked in code:
+   - `https://` only; the canonical URL and every licensee domain and subdomain are exempt (the canonical *host* alone is not, since works often live on shared hosts);
+   - **duplicate prevention:** the URL is normalised (scheme, `www.`, query, fragment, trailing slash dropped) and each work accepts one claim per normalised URL, ever (`claim_for_url` shows it);
+   - the bounty is **reserved** at filing so pending claims can never overdraw the stake; creators cannot report their own work.
+3. `adjudicate(claim_id)`, callable by anyone.
+   - **Data (non-deterministic).** The leader fetches both pages (rendered text, tags stripped).
+   - **In code.** Both texts are tokenised and compared with word 6-gram shingles: *containment* = share of the original's shingles found on the suspect page, plus coverage, longest shared run and the longest matching passages.
+   - **Judgment (non-deterministic).** The LLM sees the licence, the overlap numbers, the matched passages and both fenced pages, and classifies the use (`verbatim_copy`, `close_paraphrase`, `quotation`, `licensed_use`, `fair_use`, `unrelated`), says whether the licence's conditions were met, and quotes the copied passages.
+   - **Verdict in code.** Quotes are kept only if their words literally occur in *both* pages. **UPHELD** iff the use is a copy or close paraphrase, the licence was not complied with, ≥ 1 quote verifies, and containment ≥ `min_overlap_bps` (half of it for close paraphrase). Otherwise **REJECTED**; **UNAVAILABLE** if the suspect page cannot be fetched.
+4. **Money in code.** UPHELD: the reporter gets the bounty plus the bond back. REJECTED: the bond goes to the creator. UNAVAILABLE: the bond is refunded and the URL is freed for a later claim.
+
+**Consensus (custom validator).** Each validator re-fetches both pages, recomputes the overlap and re-judges. It agrees only if:
+- the leader's verdict follows from the leader's own category, licence flag, verified quotes and containment,
+- its own verdict is identical,
+- containment is within 10 points of its own, and
+- for UPHELD, every quote the leader relied on occurs in the validator's own copy of both pages.
+
+**Safety**
+- Both pages are fenced as untrusted data with the delimiters neutralised; permission claims inside a page count only as real attribution, never as instructions.
+- An LLM that over-claims cannot uphold a claim on its own: the overlap threshold and quote verification are deterministic.
+- The LLM never outputs money; overlap metrics, verified quotes and the reasoning are stored in the claim report.
+
+**Views:** `get_work`, `get_claim` (report), `claim_for_url`, `get_counts`.
+
+**Live demo (Studionet, `node demo_registry.mjs 0x1F44…1a41`).** Work #0: [`examples/original-work-demo/original-essay.md`](examples/original-work-demo/original-essay.md) registered with its raw GitHub URL as canonical, licence CC BY-NC with credit + link, licensee `asterie.app`, stake 2 GEN, bounty 1 GEN, claim bond 0.1 GEN, threshold 30% ([`0x8fd9bfa6…35d3`](https://explorer-studio.genlayer.com/tx/0x8fd9bfa655f082f2944dcb92508d869705742c7ed596bfbfd66110c0cff035d3)). Two claims were filed against pages served live from jsDelivr ([`0x68b31902…09f8`](https://explorer-studio.genlayer.com/tx/0x68b3190278d2e772bb8ff894d0a81f2f65a38234645170068e3d5c51a46009f8), [`0xa8cb2966…a113`](https://explorer-studio.genlayer.com/tx/0xa8cb29661b41924be93082a5bb084e02a7d84b00c12cd7074ecc24ec2627a113)).
+- *Claim #0, content-farm copy* ([`0xacddb6a3…b6b3`](https://explorer-studio.genlayer.com/tx/0xacddb6a310132286d994da4e2d19098e201cd954ae0fb056c904ba6819aeb6b3)): containment **63.8%**, longest shared run 149 words, `verbatim_copy`, licence not complied ("Verbatim commercial copy without credit or canonical link") → **UPHELD**; the reporter received the 1 GEN bounty plus the 0.1 GEN bond. Validators agreed (3/3).
+- *Claim #1, newsletter quoting one line with credit* ([`0xb16023f1…7b8d`](https://explorer-studio.genlayer.com/tx/0xb16023f1eca389c39e11e1c963cded006a295359b761afe16e1dcbd7b7c07b8d)): containment **5.2%**, longest run 18 words, `quotation`, licence complied → **REJECTED**; the 0.1 GEN bond went to the creator. Validators agreed (3/3).
+- Work after the demo: stake 1 GEN, 2 claims, 1 upheld, nothing reserved.
+
 ---
 
 ## Running it
@@ -254,6 +322,9 @@ for f in contracts/*.py; do .venv/bin/genvm-lint check "$f"; done
 .venv/bin/pytest tests/direct -q
 ```
 
+Direct mode downloads a GenVM runner bundle on first use. Newer genvm releases no longer ship `genvm-universal.tar.xz`; if the download 404s, fetch it from v0.2.16 into the cache first:
+`curl -L -o ~/.cache/gltest-direct/genvm-universal-v0.2.16.tar.xz https://github.com/genlayerlabs/genvm/releases/download/v0.2.16/genvm-universal.tar.xz`
+
 ### Deploy and try on Studionet
 
 Create a `.wallet` file, which is git-ignored, containing a test key: `{"privateKey": "0x..."}`. Then run:
@@ -265,6 +336,8 @@ node demo_weather.mjs <ParametricWeatherCover address>      # pool, priced polic
 node demo_arbiter.mjs <EvidenceArbiter address>             # agreement, dispute, ruling, appeal
 node demo_retro.mjs <RetroImpactPool address>                # funded round, allocation, identity link, sweep
 node demo_sla.mjs <SlaUptimeBond address>                    # SLA offer, live probes, status-feed assessment
+node demo_forecast.mjs <ScalarForecastPool address>          # numeric round, two forecasts, web resolution + scoring
+node demo_registry.mjs <OriginalWorkRegistry address>        # registered work, two infringement claims adjudicated
 ```
 
 To try a contract without any setup, open its **Studio import link** from the table above in [GenLayer Studio](https://studio.genlayer.com) and call its methods from the UI.
@@ -278,10 +351,13 @@ contracts/parametric_weather_cover.py  ParametricWeatherCover
 contracts/evidence_arbiter.py       EvidenceArbiter
 contracts/retro_impact_pool.py      RetroImpactPool
 contracts/sla_uptime_bond.py        SlaUptimeBond
-tests/direct/                       direct-mode unit tests (55)
+contracts/scalar_forecast_pool.py   ScalarForecastPool
+contracts/original_work_registry.py OriginalWorkRegistry
+tests/direct/                       direct-mode unit tests (79)
 deploy.mjs / demo_*.mjs             genlayer-js deploy + demo scripts
 examples/evidence-arbiter-demo/     evidence files used by the EvidenceArbiter demo
 examples/retro-impact-demo/         GitHub identity proof used by the RetroImpactPool demo
+examples/original-work-demo/        essay + suspect pages used by the OriginalWorkRegistry demo
 deployments.jsonl                   deployment log (Studionet)
 ```
 
