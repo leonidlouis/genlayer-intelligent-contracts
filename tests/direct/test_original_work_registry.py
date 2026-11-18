@@ -240,3 +240,21 @@ def test_close_work_refunds_free_stake(direct_vm, direct_deploy, direct_alice, d
     direct_vm.value = GEN // 10
     with direct_vm.expect_revert("not active"):
         c.file_claim(wid, "https://farm.example.net/p", "")
+
+
+def test_payout_depends_only_on_verdict_not_overlap(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    # Two upheld claims with very different containment pay exactly the same fixed bounty + own bond:
+    # the tolerant overlap figure never sizes a payment.
+    c, wid = _work(direct_vm, direct_deploy, direct_alice)
+    half = " ".join(ORIGINAL.split()[40:105])
+    partial = f"<html><body><p>Repost.</p><p>{half}</p><p>Lots of unrelated filler about boats and fuel.</p></body></html>"
+    c1 = _file(direct_vm, c, wid, direct_bob, "https://farm.example.net/why-tides")
+    c2 = _file(direct_vm, c, wid, direct_charlie, "https://other.example.net/tides-partial")
+    _mock_pages(direct_vm, r"farm\.example\.net", COPY)
+    direct_vm.mock_web(r".*other\.example\.net.*", {"status": 200, "body": partial})
+    _mock_judge(direct_vm, "verbatim_copy", False, [Q1])
+    o1 = c.adjudicate(c1)
+    o2 = c.adjudicate(c2)
+    assert o1["verdict"] == o2["verdict"] == "UPHELD"
+    assert o1["containment_bps"] - o2["containment_bps"] > 2000
+    assert o1["bounty_paid"] == o2["bounty_paid"] == str(GEN)

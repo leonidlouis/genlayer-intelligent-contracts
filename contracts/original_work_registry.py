@@ -39,10 +39,16 @@ Flow
      Custom validator: the leader's verdict must follow from its own fields;
      the leader's quotes must occur in the validator's own copy of both pages
      (for UPHELD); the validator recomputes the overlap (within 10 points) and
-     re-judges, and agrees only on the same verdict.
-  4. Money is moved by code only: UPHELD pays the reporter the bounty plus the
-     bond back; REJECTED sends the bond to the creator; UNAVAILABLE refunds the
-     bond and frees the URL for a later claim.
+     re-judges, and agrees only on the EXACT same verdict.
+  4. Money is moved by code only and depends ONLY on the verdict: UPHELD pays
+     the reporter the work's fixed bounty plus the claim's own bond back;
+     REJECTED sends that bond to the creator; UNAVAILABLE refunds the bond and
+     frees the URL for a later claim. The bounty and bond are amounts fixed in
+     storage at registration / filing time; the verdict (the only
+     payout-determining result) is compared by exact equality in the
+     validator. The overlap tolerance applies only to the reported
+     containment figure, which is informational evidence and never sizes a
+     payment, so no validator-compatible result can move a different amount.
 """
 import json
 import re
@@ -433,6 +439,8 @@ Return only JSON: {{"category": "<one of the above>", "licence_complied": true |
                 return False
             if v == "UNAVAILABLE":
                 return True
+            # Informational only: containment never sizes a payment (money depends on the
+            # exactly-compared verdict plus fixed stored amounts), so a tolerance is safe here.
             if abs(int(mine["containment_bps"]) - int(theirs["containment_bps"])) > OVERLAP_TOL_BPS:
                 return False
             if v == "UPHELD":

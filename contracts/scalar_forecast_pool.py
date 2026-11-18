@@ -25,8 +25,14 @@ Flow
      of the median.
      Custom validator: the leader's median and agreement flag must follow from
      the leader's own per-source values; the validator re-fetches and
-     re-extracts, and agrees only on the same status and, if resolved, a
-     median within agree_bps of its own (min 1 unit).
+     re-extracts, and agrees only on the SAME status and, if resolved, the
+     EXACT same integer median at the round's fixed-point precision. The
+     median is the only input to the payouts, so every validator-approved
+     result moves exactly the same amounts. There is no tolerance on it: if
+     validators read different figures, consensus fails, nothing is paid,
+     resolve() can be retried and, after resolve_ttl, void() refunds everyone.
+     (agree_bps only decides, deterministically in code, whether the sources
+     agree with EACH OTHER; it is never a leader/validator tolerance.)
   4. Payouts are computed in code, never by the LLM. Each forecast gets a
      penalty = interval score (width + 10 x miss outside the 80 % interval,
      Gneiting-Raftery with alpha 0.2) + 2 x |point - outcome|, expressed in bps
@@ -406,9 +412,9 @@ Return only JSON: {{"found": true | false, "value": "<number as written, or empt
             if mine["status"] != lagg["status"]:
                 return False
             if lagg["status"] != "RESOLVED":
-                return True
-            a, b = mine["median"], lagg["median"]
-            return abs(a - b) <= max(1, abs(b) * agree_bps // 10000)
+                return True  # nothing is paid on NO_QUORUM / DISAGREE
+            # The median is the payout-determining value: exact equality, no tolerance.
+            return isinstance(mine["median"], int) and mine["median"] == lagg["median"]
 
         res = gl.vm.run_nondet_unsafe(run, validate)
         rd.attempts = u256(int(rd.attempts) + 1)

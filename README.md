@@ -9,9 +9,9 @@ Eight Intelligent Contracts for [GenLayer](https://genlayer.com) that use LLM ju
 | [`ParametricWeatherCover`](contracts/parametric_weather_cover.py) | Parametric weather insurance: underwriter pool, premiums priced from 10 years of weather history, payouts settled from observed weather data | `0x2db617aE09422C072cfd0447030c70fac413ac63` | [import](https://studio.genlayer.com/?import-contract=0x2db617aE09422C072cfd0447030c70fac413ac63) · [explorer](https://explorer-studio.genlayer.com/address/0x2db617aE09422C072cfd0447030c70fac413ac63) |
 | [`EvidenceArbiter`](contracts/evidence_arbiter.py) | Two-party escrow with an evidence-based AI arbitration ruling, a percentage split and one bonded appeal | `0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0` | [import](https://studio.genlayer.com/?import-contract=0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0) · [explorer](https://explorer-studio.genlayer.com/address/0x53DeD71da1B8F3Ef1CF33711ACC727A4ACb1d9b0) |
 | [`RetroImpactPool`](contracts/retro_impact_pool.py) | Retroactive funding for an open-source repo: the pool is split between authors of merged PRs by LLM-judged impact against the funder's priorities, with GitHub-to-wallet proof links | `0xb2420398F76d0D5A474579843B38F98a75286Dd4` | [import](https://studio.genlayer.com/?import-contract=0xb2420398F76d0D5A474579843B38F98a75286Dd4) · [explorer](https://explorer-studio.genlayer.com/address/0xb2420398F76d0D5A474579843B38F98a75286Dd4) |
-| [`SlaUptimeBond`](contracts/sla_uptime_bond.py) | SLA with a provider bond: live health probes plus an LLM reading of the public status feed against the written SLA scope; uptime and service credits computed in code | `0xE400a078e3514Ab0143e7E078fB7d08790C7C07b` | [import](https://studio.genlayer.com/?import-contract=0xE400a078e3514Ab0143e7E078fB7d08790C7C07b) · [explorer](https://explorer-studio.genlayer.com/address/0xE400a078e3514Ab0143e7E078fB7d08790C7C07b) |
-| [`ScalarForecastPool`](contracts/scalar_forecast_pool.py) | Staked forecasting on a numeric real-world value (point + 80% interval), resolved from 1-3 web sources by LLM extraction + median/agreement in code, paid by an interval scoring rule | `0xcbbF46daE1d0e07b4cbA58676b8eE1600893d1dE` | [import](https://studio.genlayer.com/?import-contract=0xcbbF46daE1d0e07b4cbA58676b8eE1600893d1dE) · [explorer](https://explorer-studio.genlayer.com/address/0xcbbF46daE1d0e07b4cbA58676b8eE1600893d1dE) |
-| [`OriginalWorkRegistry`](contracts/original_work_registry.py) | Registry of original works with licence terms and staked infringement bounties; claims decided from live pages by code-computed shingle overlap + LLM licence judgment | `0x1F444Be29dcDB7De8538Bd93a3d2f8956d351a41` | [import](https://studio.genlayer.com/?import-contract=0x1F444Be29dcDB7De8538Bd93a3d2f8956d351a41) · [explorer](https://explorer-studio.genlayer.com/address/0x1F444Be29dcDB7De8538Bd93a3d2f8956d351a41) |
+| [`SlaUptimeBond`](contracts/sla_uptime_bond.py) | SLA with a provider bond: live health probes plus an LLM reading of the public status feed against the written SLA scope; uptime and service credits computed in code | `0x37Fe4AA8E3aC46CB5601CB010E8896F463f9F720` | [import](https://studio.genlayer.com/?import-contract=0x37Fe4AA8E3aC46CB5601CB010E8896F463f9F720) · [explorer](https://explorer-studio.genlayer.com/address/0x37Fe4AA8E3aC46CB5601CB010E8896F463f9F720) |
+| [`ScalarForecastPool`](contracts/scalar_forecast_pool.py) | Staked forecasting on a numeric real-world value (point + 80% interval), resolved from 1-3 web sources by LLM extraction + median/agreement in code, paid by an interval scoring rule | `0x5341bB9b5D4566C9C8e96a068fF56a822f44a15D` | [import](https://studio.genlayer.com/?import-contract=0x5341bB9b5D4566C9C8e96a068fF56a822f44a15D) · [explorer](https://explorer-studio.genlayer.com/address/0x5341bB9b5D4566C9C8e96a068fF56a822f44a15D) |
+| [`OriginalWorkRegistry`](contracts/original_work_registry.py) | Registry of original works with licence terms and staked infringement bounties; claims decided from live pages by code-computed shingle overlap + LLM licence judgment | `0xef70Cd20Bf23889B46b04d0a6AC3EfB08846949e` | [import](https://studio.genlayer.com/?import-contract=0xef70Cd20Bf23889B46b04d0a6AC3EfB08846949e) · [explorer](https://explorer-studio.genlayer.com/address/0xef70Cd20Bf23889B46b04d0a6AC3EfB08846949e) |
 
 Network: **GenLayer Studionet** (chain id 61999, RPC `https://studio.genlayer.com/api`). Full deployment log with transaction hashes: [`deployments.jsonl`](deployments.jsonl).
 
@@ -208,7 +208,7 @@ Retroactive public-goods funding for one open-source repository. Nobody applies 
 A service-level agreement that pays its own service credits. The provider backs the SLA with a bond; credits are decided from public evidence instead of the provider's goodwill.
 
 **Flow**
-1. `offer(customer, service, scope, status_url, health_url, health_expect, target_bps, period_start, period_end, probe_interval)` (payable). The provider posts the bond and the written SLA scope (which components count, what is an outage vs degraded, what is excluded).
+1. `offer(customer, service, scope, status_url, health_url, health_expect, target_bps, period_start, period_end, probe_interval, fallback_grace)` (payable). `fallback_grace` (15 min to 30 days after the period end) bounds how long the escrow can wait for a successful assessment. The provider posts the bond and the written SLA scope (which components count, what is an outage vs degraded, what is excluded).
 2. `accept(id)` (payable). Only the named customer can accept, paying the service fee into escrow. The provider can `cancel` an unaccepted offer.
 3. `probe(id)`, callable by anyone during the period, at most once per `probe_interval`.
    - **Non-deterministic.** The leader GETs the health URL: UP if the status is below 400 and the expected text is present. Validators probe independently and must see the same UP/DOWN.
@@ -218,6 +218,10 @@ A service-level agreement that pays its own service credits. The provider backs 
    - **Any other status page**: the LLM extracts the incidents (ISO start/end and class) from the rendered text, and invalid rows are dropped in code.
    - **In code:** intervals are clipped to the period and merged (outage wins over degraded), degraded minutes count 50%, and the larger of reported and probe-measured downtime is used. Uptime in bps then maps to the credit tier by shortfall below target: 0 → 0%, ≤0.5 pt → 10%, ≤4 pt → 25%, ≤9 pt → 50%, beyond → 100% of the bond.
    - Settlement is immediate: the credit goes to the customer, and the rest of the bond plus the fee go to the provider.
+5. `settle_fallback(id)`, callable by anyone once `period_end + fallback_grace` has passed and `assess()` has not succeeded (for example because the provider-controlled status feed stays unreachable, returns errors, or cannot be processed). It is fully deterministic: no web access, no LLM, and the feed is never read. It uses only the probe record already on-chain:
+   - **No probes recorded:** the fee is refunded to the customer and the bond is returned to the provider.
+   - **Otherwise:** uptime = the worse of the sampled share of successful probes and the period minus `probe_interval` per failed probe; the same credit table applies; the credit goes to the customer, the rest of the bond plus the fee to the provider.
+   - Either way both balances are released, so the escrow can never be locked indefinitely.
 
 **Consensus (custom validators)**
 - *Probe:* validators re-probe; agree only on the same UP/DOWN.
@@ -225,6 +229,7 @@ A service-level agreement that pays its own service credits. The provider backs 
   - the leader's weighted downtime and credit tier follow from the leader's own incident list,
   - the credit tier is identical to its own, and
   - weighted downtime is within max(90 min, 25%).
+- The payout is `bond × credit_bps`, and `credit_bps` is one of five canonical tiers compared by **exact equality**. The downtime tolerance covers only the informational minutes in the report; downtime affects money only through the exactly-compared tier.
 
 **Safety**
 - Status-page text is fenced as untrusted data; the model is told to classify by what broke for users, not by the provider's own impact label.
@@ -233,10 +238,14 @@ A service-level agreement that pays its own service credits. The provider backs 
 
 **Views:** `get_sla` (probes, failed probe times, settlement report), `get_sla_count`, `credit_table`.
 
-**Live demo (Studionet, `node demo_sla.mjs 0xE400…C07b`).** SLA #0: provider = deployer, customer = a throwaway account. Service "GitHub core (demo)": Git Operations, API Requests, Pull Requests, Issues and Webhooks in scope; Actions, Pages, Copilot, Dependabot and others out of scope; target 99.90%. Period 2026-10-26 00:00 UTC to 2026-11-09 03:31 UTC, bond 4 GEN, fee 0.5 GEN. Health endpoint `https://github.com/robots.txt`; status feed `https://www.githubstatus.com/api/v2/incidents.json`.
-- Offer [`0x938b0200…6bdc`](https://explorer-studio.genlayer.com/tx/0x938b020054f0bcc53dbdd59f9fe6cb7bf03c4127b161e03f4f255a85ec076bdc), accept [`0xc8bcd248…2d0d`](https://explorer-studio.genlayer.com/tx/0xc8bcd248f413a181e3b5a94a4cc181ccc70371fd46de07a4ad4b78011bf42d0d).
-- *Probes* ([`0xf11beca8…5418`](https://explorer-studio.genlayer.com/tx/0xf11beca87c8fe2f693759c75fdc6fc584ac1b939fd9f0d423882c676e6d95418), [`0xe701b3a6…8c01`](https://explorer-studio.genlayer.com/tx/0xe701b3a6acbf778d694b63ea677e30058b40bcfc127d1b0a118bb6f5fc188c01)): both UP, validators agreed.
-- *Assessment* ([`0x4d1ab6d1…fe2b`](https://explorer-studio.genlayer.com/tx/0x4d1ab6d1235c090cc89d1b3988162cafbd246d96c489cf281c2e50f37ee1fe2b)): 17 real GitHub incidents overlapped the period. 7 were classed **out of scope** (Copilot, Actions-only, Dependabot), 8 **degraded** (e.g. Git HTTPS slowness on Nov 3, PR/Git/Issues on Nov 4, API timeouts on Nov 8), 2 **outage** (Issues disruption on Oct 30, plus a zero-length backdated entry). Result: 31 outage + 573 degraded minutes = **317 weighted minutes**, **uptime 98.44%** vs 99.90% target, **25% credit**. The customer received 1 GEN; the provider got 3 GEN of bond back plus the 0.5 GEN fee. Validators agreed; finalized.
+**Live demo (Studionet, `node demo_sla.mjs 0x37Fe…F720`).** SLA #0: provider = deployer, customer = a throwaway account. Service "GitHub core (demo)": Git Operations, API Requests, Pull Requests, Issues and Webhooks in scope; Actions, Pages, Packages, Codespaces, Dependabot, Projects and every Copilot / AI model service out of scope; target 99.90%. Period 2026-10-26 00:00 UTC to 2026-11-16 04:08 UTC, bond 4 GEN, fee 0.5 GEN, `fallback_grace` 15 min. Health endpoint `https://github.com/robots.txt`; status feed `https://www.githubstatus.com/api/v2/incidents.json`.
+- Offer [`0x67545261…61f4`](https://explorer-studio.genlayer.com/tx/0x67545261bd1f22d8d5f0fc1afcf432728bb62a579d4533101e32d9fd940461f4), accept [`0x2ec4af65…2449`](https://explorer-studio.genlayer.com/tx/0x2ec4af65ce855dace02e9a45073d8546fbfd41d528331bb062f52dc30e072449).
+- *Probes* ([`0x59b96811…2b19`](https://explorer-studio.genlayer.com/tx/0x59b96811ec7d0b0f2e8538416d135fb96a01f1a5881ac7fec58cc65352fb2b19), [`0xea550721…43ff`](https://explorer-studio.genlayer.com/tx/0xea550721eb2042ebc9398db3969de9336d752d1835338a0e869464c1f64843ff)): both UP, validators agreed.
+- *Assessment* ([`0xbfe2e28f…737c`](https://explorer-studio.genlayer.com/tx/0xbfe2e28f60744bc4658186d98d550aa21a10f7f4c66fcabc5d2ab6917bc4737c)): 28 real GitHub incidents overlapped the period. 11 were classed **out of scope** (Copilot, Actions/Pages-only, Dependabot), 16 **degraded** (e.g. Git Operations on Nov 3 and Nov 10, PR/Git/Issues on Nov 4, timeouts for anonymous users on Nov 8-9, Pull Requests on Nov 13) and 1 **outage** (a zero-length entry for GitHub App token 404s). Result: 0 outage + 1,260 degraded minutes = **630 weighted minutes**, **uptime 97.93%** vs 99.90% target, **25% credit**. The customer received 1 GEN; the provider got 3 GEN of bond back plus the 0.5 GEN fee. Validators agreed; finalized.
+
+**Live fallback demo (`node demo_sla_fallback.mjs 0x37Fe…F720`).** Two SLAs whose status feed is a URL that returns HTTP 404 (a provider feed that stays broken); bond 1 GEN, fee 0.2 GEN, `fallback_grace` 15 min.
+- *SLA #1, probed* (offer [`0x2b3c80c6…77ac`](https://explorer-studio.genlayer.com/tx/0x2b3c80c664c104f0ec3a542dd7586fc31c83eb264b0f0b3f95a1c079c17777ac), accept [`0x4b71e11f…62e7`](https://explorer-studio.genlayer.com/tx/0x4b71e11fdd2f839254c2b1241ce765651b4065774aad22c598bbfba14e8162e7), probe [`0x20b35334…beb0`](https://explorer-studio.genlayer.com/tx/0x20b353343739384bb01d0d72932656638481a0327747972baa9372540722beb0) UP). `assess()` after the period ([`0xdf11588e…6ae4`](https://explorer-studio.genlayer.com/tx/0xdf11588e1425fb00e425a816386e1f779c6477dc8445e21b62f6b0becf326ae4)) failed on the broken feed, as intended, and settled nothing. After the grace period `settle_fallback()` ([`0x321381aa…3b42`](https://explorer-studio.genlayer.com/tx/0x321381aa7b8d2d6f6b3db290e3f2d58a5cb6cf3270e8634acb69784b59923b42)) settled from the on-chain probe record only: 1/1 probes UP, uptime 100%, 0% credit, so the provider received the 1 GEN bond plus the 0.2 GEN fee.
+- *SLA #2, never probed* (offer [`0xa73befe3…e484`](https://explorer-studio.genlayer.com/tx/0xa73befe305dedc77c25117afbcfb2930914b641d2e3978f7a1f313bc4572e484), accept [`0x4d74cd3a…7d85`](https://explorer-studio.genlayer.com/tx/0x4d74cd3a62f4c7a8ce355f7e73a36e46bf04adbd257e281cee25b78427f57d85)). `settle_fallback()` ([`0x17626b00…47d2`](https://explorer-studio.genlayer.com/tx/0x17626b0000465491294ffb9ada238ab39a8c035e05d9448168c9c1913fc147d2)): nothing was measured, so the 0.2 GEN fee was refunded to the customer and the 1 GEN bond returned to the provider. Both escrows ended at 0.
 
 ## ScalarForecastPool
 
@@ -256,7 +265,9 @@ Forecasting on a **number**, not a yes/no question. Forecasters stake GEN on a p
 - the leader's per-source list covers exactly the round's sources,
 - the leader's status and median follow exactly from the leader's own per-source values,
 - its own status is the same, and
-- if resolved, its median is within `agree_bps` (min. 1 unit) of the leader's.
+- if resolved, its own median is **exactly equal** to the leader's integer median at the round's precision (`decimals`).
+
+The median is the only input to the payouts, so it is bound exactly: no tolerance, and every validator-approved result pays exactly the same amounts. If validators read different figures, consensus fails, nothing is paid, `resolve()` can be retried, and after `resolve_ttl` the existing `void()` path refunds everyone. `agree_bps` is not a validator tolerance: it is a deterministic check, in code, of whether the sources agree with each other.
 
 **Safety**
 - Source text is fenced as untrusted data with the delimiters neutralised; the model is told to ignore instructions and fake values in it.
@@ -265,9 +276,9 @@ Forecasting on a **number**, not a yes/no question. Forecasters stake GEN on a p
 
 **Views:** `get_round` (evidence, outcome, payouts), `get_forecast`, `preview_payouts(round_id, outcome)`, `get_round_count`.
 
-**Live demo (Studionet, `node demo_forecast.mjs 0xcbbF…d1dE`).** Round #0: *ECB euro reference rate, USD per EUR, for 2026-11-13*, 4 decimals, sources = ECB Data Portal API (CSV) and Frankfurter (JSON), both required, agreement within 10 bps, score scale 50 bps, 1 GEN subsidy.
-- *Round + forecasts* ([`0x71ab9cb7…2561`](https://explorer-studio.genlayer.com/tx/0x71ab9cb7e9c9d8fc5f79a5b503a70d63a7c5d7fb39b4e6a7e5ab34fbbebb2561), [`0x31b18750…36f6`](https://explorer-studio.genlayer.com/tx/0x31b18750afdbcba021a0464200cb37a445b7b241102559e104c507a04c6b36f6), [`0x6317461d…e1a0`](https://explorer-studio.genlayer.com/tx/0x6317461d973bd2da7270ce0dc3c94575c65c6d4ddbcf66f9132e5075e94be1a0)): A staked 1 GEN on 1.1040 [1.1000, 1.1080]; B staked 0.5 GEN on 1.1150 [1.1120, 1.1180].
-- *Resolution* ([`0x508e688c…090b`](https://explorer-studio.genlayer.com/tx/0x508e688c73b20a443e3eec8cdc6d36fdb547c6ca14035b3cbd700c65da02090b)): both sources read **1.1052** (ECB CSV row `…,2026-11-13,1.1052,…`; Frankfurter `"USD":1.1052`), spread 0 bps → outcome **11052**. A (inside its interval, 12 units off) scored q ≈ 0.121; B (missed its interval by 68 units) q ≈ 0.003. Payouts from the 2.5 GEN pot: **A 2.468 GEN, B 0.032 GEN**. Validators agreed (3/3); finalized.
+**Live demo (Studionet, `node demo_forecast.mjs 0x5341…a15D`).** Round #0: *ECB euro reference rate, USD per EUR, for 2026-11-13*, 4 decimals, sources = ECB Data Portal API (CSV) and Frankfurter (JSON), both required, sources must agree within 10 bps, score scale 50 bps, 1 GEN subsidy.
+- *Round + forecasts* ([`0x5e6beea0…a6d2`](https://explorer-studio.genlayer.com/tx/0x5e6beea0bf2b1148594e0ebae5f945234a955abc53d06fff40bd85a789caa6d2), [`0xe67bc24d…85f1`](https://explorer-studio.genlayer.com/tx/0xe67bc24d29ce1669b94c4aa07908e9842550377bdf1ff971908319961a2d85f1), [`0x7858a960…efe0`](https://explorer-studio.genlayer.com/tx/0x7858a9600160372c7f5e82d69218d4425f2e4f4f82ea13fc7b47fe653ee9efe0)): A staked 1 GEN on 1.1040 [1.1000, 1.1080]; B staked 0.5 GEN on 1.1150 [1.1120, 1.1180].
+- *Resolution* ([`0xf5c06357…2ce1`](https://explorer-studio.genlayer.com/tx/0xf5c0635754854b6983020697868426a84c12d11d71b623710ceeed10831c2ce1)): both sources read **1.1052** (ECB CSV row `…,2026-11-13,1.1052,…`; Frankfurter `"USD":1.1052`), spread 0 bps → median **11052**, which every validator reproduced exactly (3/3 agree). A (inside its interval, 12 units off) scored q ≈ 0.121; B (missed its interval by 68 units) q ≈ 0.003. Payouts from the 2.5 GEN pot: **A 2.468 GEN, B 0.032 GEN**. Finalized.
 
 ## OriginalWorkRegistry
 
@@ -284,13 +295,15 @@ Plagiarism and licence enforcement for written work. Creators register a work wi
    - **In code.** Both texts are tokenised and compared with word 6-gram shingles: *containment* = share of the original's shingles found on the suspect page, plus coverage, longest shared run and the longest matching passages.
    - **Judgment (non-deterministic).** The LLM sees the licence, the overlap numbers, the matched passages and both fenced pages, and classifies the use (`verbatim_copy`, `close_paraphrase`, `quotation`, `licensed_use`, `fair_use`, `unrelated`), says whether the licence's conditions were met, and quotes the copied passages.
    - **Verdict in code.** Quotes are kept only if their words literally occur in *both* pages. **UPHELD** iff the use is a copy or close paraphrase, the licence was not complied with, ≥ 1 quote verifies, and containment ≥ `min_overlap_bps` (half of it for close paraphrase). Otherwise **REJECTED**; **UNAVAILABLE** if the suspect page cannot be fetched.
-4. **Money in code.** UPHELD: the reporter gets the bounty plus the bond back. REJECTED: the bond goes to the creator. UNAVAILABLE: the bond is refunded and the URL is freed for a later claim.
+4. **Money in code, from the verdict only.** UPHELD: the reporter gets the work's fixed bounty plus the claim's own bond back. REJECTED: the bond goes to the creator. UNAVAILABLE: the bond is refunded and the URL is freed for a later claim. The bounty and bond are amounts fixed in storage at registration and filing; nothing else sizes a payment.
 
 **Consensus (custom validator).** Each validator re-fetches both pages, recomputes the overlap and re-judges. It agrees only if:
 - the leader's verdict follows from the leader's own category, licence flag, verified quotes and containment,
 - its own verdict is identical,
 - containment is within 10 points of its own, and
 - for UPHELD, every quote the leader relied on occurs in the validator's own copy of both pages.
+
+The verdict is the only payout-determining result and it is compared by **exact equality**. The 10-point tolerance applies only to the reported containment figure, which is stored as evidence and never sizes a payment, so no validator-compatible result can move a different amount of money.
 
 **Safety**
 - Both pages are fenced as untrusted data with the delimiters neutralised; permission claims inside a page count only as real attribution, never as instructions.
@@ -299,9 +312,9 @@ Plagiarism and licence enforcement for written work. Creators register a work wi
 
 **Views:** `get_work`, `get_claim` (report), `claim_for_url`, `get_counts`.
 
-**Live demo (Studionet, `node demo_registry.mjs 0x1F44…1a41`).** Work #0: [`examples/original-work-demo/original-essay.md`](examples/original-work-demo/original-essay.md) registered with its raw GitHub URL as canonical, licence CC BY-NC with credit + link, licensee `asterie.app`, stake 2 GEN, bounty 1 GEN, claim bond 0.1 GEN, threshold 30% ([`0x8fd9bfa6…35d3`](https://explorer-studio.genlayer.com/tx/0x8fd9bfa655f082f2944dcb92508d869705742c7ed596bfbfd66110c0cff035d3)). Two claims were filed against pages served live from jsDelivr ([`0x68b31902…09f8`](https://explorer-studio.genlayer.com/tx/0x68b3190278d2e772bb8ff894d0a81f2f65a38234645170068e3d5c51a46009f8), [`0xa8cb2966…a113`](https://explorer-studio.genlayer.com/tx/0xa8cb29661b41924be93082a5bb084e02a7d84b00c12cd7074ecc24ec2627a113)).
-- *Claim #0, content-farm copy* ([`0xacddb6a3…b6b3`](https://explorer-studio.genlayer.com/tx/0xacddb6a310132286d994da4e2d19098e201cd954ae0fb056c904ba6819aeb6b3)): containment **63.8%**, longest shared run 149 words, `verbatim_copy`, licence not complied ("Verbatim commercial copy without credit or canonical link") → **UPHELD**; the reporter received the 1 GEN bounty plus the 0.1 GEN bond. Validators agreed (3/3).
-- *Claim #1, newsletter quoting one line with credit* ([`0xb16023f1…7b8d`](https://explorer-studio.genlayer.com/tx/0xb16023f1eca389c39e11e1c963cded006a295359b761afe16e1dcbd7b7c07b8d)): containment **5.2%**, longest run 18 words, `quotation`, licence complied → **REJECTED**; the 0.1 GEN bond went to the creator. Validators agreed (3/3).
+**Live demo (Studionet, `node demo_registry.mjs 0xef70…949e`).** Work #0: [`examples/original-work-demo/original-essay.md`](examples/original-work-demo/original-essay.md) registered with its raw GitHub URL as canonical, licence CC BY-NC with credit + link, licensee `asterie.app`, stake 2 GEN, bounty 1 GEN, claim bond 0.1 GEN, threshold 30% ([`0xcc26f622…9e57`](https://explorer-studio.genlayer.com/tx/0xcc26f622c57cab6b9c836ac1eee2665d4268b4ba631926af5a8f18816a8a9e57)). Two claims were filed against pages served live from jsDelivr ([`0xae05c42f…005f`](https://explorer-studio.genlayer.com/tx/0xae05c42fa129c4765f4acc33db694c7a6ea25c73cba4a6ccaee37e320d6b005f), [`0xe8ac79e6…460f`](https://explorer-studio.genlayer.com/tx/0xe8ac79e64c85c94e17327157b1101b9ab0c8b8a4a136e326c5314c0c3421460f)).
+- *Claim #0, content-farm copy* ([`0x8fc3a0de…e6d6`](https://explorer-studio.genlayer.com/tx/0x8fc3a0de665a2cd42c8ec17661a282e97dfeeb8894f80583de7d22375f5ce6d6)): containment **63.8%**, longest shared run 149 words, 4 verified quotes, `verbatim_copy`, licence not complied ("Substantial verbatim reproduction lacks Louis Leonid credit and the canonical link") → **UPHELD**; the reporter received the fixed 1 GEN bounty plus the 0.1 GEN bond. Validators agreed (3/3).
+- *Claim #1, newsletter quoting one line with credit* ([`0x02d2fa12…b8ba`](https://explorer-studio.genlayer.com/tx/0x02d2fa120a87b3ec855d2b0acead1b70e9e0f3eab82e689ca82b8d888d8eb8ba)): containment **5.2%**, longest run 18 words, `quotation`, licence complied → **REJECTED**; the 0.1 GEN bond went to the creator. Validators agreed (3/3).
 - Work after the demo: stake 1 GEN, 2 claims, 1 upheld, nothing reserved.
 
 ---
@@ -324,6 +337,7 @@ for f in contracts/*.py; do .venv/bin/genvm-lint check "$f"; done
 
 Direct mode downloads a GenVM runner bundle on first use. Newer genvm releases no longer ship `genvm-universal.tar.xz`; if the download 404s, fetch it from v0.2.16 into the cache first:
 `curl -L -o ~/.cache/gltest-direct/genvm-universal-v0.2.16.tar.xz https://github.com/genlayerlabs/genvm/releases/download/v0.2.16/genvm-universal.tar.xz`
+If `genvm-lint` has already run, you can instead reuse the bundle it cached: `cp ~/.cache/genvm-linter/genvm-universal-*.tar.xz ~/.cache/gltest-direct/`
 
 ### Deploy and try on Studionet
 
@@ -336,6 +350,7 @@ node demo_weather.mjs <ParametricWeatherCover address>      # pool, priced polic
 node demo_arbiter.mjs <EvidenceArbiter address>             # agreement, dispute, ruling, appeal
 node demo_retro.mjs <RetroImpactPool address>                # funded round, allocation, identity link, sweep
 node demo_sla.mjs <SlaUptimeBond address>                    # SLA offer, live probes, status-feed assessment
+node demo_sla_fallback.mjs <SlaUptimeBond address>           # broken status feed -> bounded fallback settlement
 node demo_forecast.mjs <ScalarForecastPool address>          # numeric round, two forecasts, web resolution + scoring
 node demo_registry.mjs <OriginalWorkRegistry address>        # registered work, two infringement claims adjudicated
 ```
@@ -353,7 +368,7 @@ contracts/retro_impact_pool.py      RetroImpactPool
 contracts/sla_uptime_bond.py        SlaUptimeBond
 contracts/scalar_forecast_pool.py   ScalarForecastPool
 contracts/original_work_registry.py OriginalWorkRegistry
-tests/direct/                       direct-mode unit tests (79)
+tests/direct/                       direct-mode unit tests (86)
 deploy.mjs / demo_*.mjs             genlayer-js deploy + demo scripts
 examples/evidence-arbiter-demo/     evidence files used by the EvidenceArbiter demo
 examples/retro-impact-demo/         GitHub identity proof used by the RetroImpactPool demo

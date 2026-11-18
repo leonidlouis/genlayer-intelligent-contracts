@@ -188,7 +188,7 @@ def test_source_text_is_fenced(direct_vm, direct_deploy, direct_alice, direct_bo
     assert out["outcome"] == "11052"
 
 
-def test_validator_checks_leader_math_and_tolerance(direct_vm, direct_deploy, direct_alice, direct_bob):
+def test_validator_checks_leader_math_and_exact_median(direct_vm, direct_deploy, direct_alice, direct_bob):
     c, rid = _round(direct_vm, direct_deploy, direct_alice)
     _bet(direct_vm, c, rid, direct_bob, 11050, 11000, 11100)
     direct_vm.warp("2026-12-04T12:00:00Z")
@@ -210,9 +210,15 @@ def test_validator_checks_leader_math_and_tolerance(direct_vm, direct_deploy, di
     assert direct_vm.run_validator(leader_result=far) is False
     near = json.loads(json.dumps(good))
     for p in near["per_source"]:
-        p["value"] = 11070  # within 20 bps
-    near["median"] = 11070
-    assert direct_vm.run_validator(leader_result=near) is True
+        p["value"] = 11053  # 1 unit off: would change payouts, so it must be rejected
+    near["median"] = 11053
+    assert direct_vm.run_validator(leader_result=near) is False
+    status = json.loads(json.dumps(good))
+    status["per_source"][1]["value"] = 11300  # leader claims sources disagree; validator reads agreement
+    status["median"] = 11176
+    status["status"] = "DISAGREE"
+    status["spread_bps"] = 223
+    assert direct_vm.run_validator(leader_result=status) is False
     wrong_src = json.loads(json.dumps(good))
     wrong_src["per_source"][0]["source"] = "https://evil.example.com"
     assert direct_vm.run_validator(leader_result=wrong_src) is False
@@ -230,3 +236,21 @@ def test_fixed_point_parsing_and_dust_to_creator(direct_vm, direct_deploy, direc
     assert out["outcome"] == "11052"  # half-up rounding to 4 decimals
     pay = [int(p) for p in out["payouts"]]
     assert sum(pay) <= 2 * GEN + 3 and pay[0] > pay[1]
+
+
+def test_validator_requires_exact_median_even_when_sources_agree_loosely(direct_vm, direct_deploy, direct_alice, direct_bob):
+    # Sources within agree_bps of each other still resolve, but the validator's
+    # own median must equal the leader's exactly.
+    c, rid = _round(direct_vm, direct_deploy, direct_alice, agree_bps=50)
+    _bet(direct_vm, c, rid, direct_bob, 11050, 11000, 11100)
+    direct_vm.warp("2026-12-04T12:00:00Z")
+    _mock_sources(direct_vm, v1="1.1050", v2="1.1054")
+    _mock_llm(direct_vm, {"OBS_VALUE": "1.1050", "rates": "1.1054"})
+    out = c.resolve(rid)
+    assert out["outcome"] == "11052"
+    assert direct_vm.run_validator() is True
+    other = {"per_source": [{"source": S1, "raw": "1.1050", "value": 11050, "note": ""},
+                            {"source": S2, "raw": "1.1050", "value": 11050, "note": ""}],
+             "status": "RESOLVED", "median": 11050, "spread_bps": 0}
+    # internally consistent and within agree_bps of the validator's 11052, but not identical
+    assert direct_vm.run_validator(leader_result=other) is False

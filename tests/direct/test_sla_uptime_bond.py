@@ -8,6 +8,7 @@ SCOPE = ("In scope: the public REST API and Git operations. Out of scope: CI run
 STATUS = "https://status.example.com/api/v2/incidents.json"
 HEALTH = "https://api.example.com/health"
 P_START, P_END = "2026-12-01T00:00:00Z", "2026-12-31T00:00:00Z"  # 30 days = 43200 min
+GRACE = 7 * 86400  # fallback opens 2027-01-07T00:00:00Z
 
 
 def _ts(s):
@@ -33,12 +34,12 @@ def _mock_classes(vm, classes, extra=r""):
         {"classes": [{"incident": k, "class": c, "why": "per scope"} for k, c in enumerate(classes)]}))
 
 
-def _active(vm, deploy, provider, customer, bond=10 * GEN, fee=GEN, expect="ok", interval=3600):
+def _active(vm, deploy, provider, customer, bond=10 * GEN, fee=GEN, expect="ok", interval=3600, grace=GRACE):
     c = deploy(C)
     vm.warp("2026-11-30T00:00:00Z")
     vm.sender = provider
     vm.value = bond
-    sid = c.offer(_hex(customer), "Acme API", SCOPE, STATUS, HEALTH, expect, 9990, _ts(P_START), _ts(P_END), interval)
+    sid = c.offer(_hex(customer), "Acme API", SCOPE, STATUS, HEALTH, expect, 9990, _ts(P_START), _ts(P_END), interval, grace)
     vm.sender = customer
     vm.value = fee
     c.accept(sid)
@@ -50,21 +51,26 @@ def test_offer_validation(direct_vm, direct_deploy, direct_alice, direct_bob):
     c = direct_deploy(C)
     direct_vm.warp("2026-11-30T00:00:00Z")
     direct_vm.sender = direct_alice
-    args = ["Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_START), _ts(P_END), 3600]
+    args = ["Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_START), _ts(P_END), 3600, GRACE]
     with direct_vm.expect_revert("attach the bond"):
         c.offer(_hex(direct_bob), *args)
     direct_vm.value = GEN
     with direct_vm.expect_revert("differ"):
         c.offer(_hex(direct_alice), *args)
     with direct_vm.expect_revert("https"):
-        c.offer(_hex(direct_bob), "Acme API", SCOPE, "http://x.com", HEALTH, "", 9990, _ts(P_START), _ts(P_END), 3600)
+        c.offer(_hex(direct_bob), "Acme API", SCOPE, "http://x.com", HEALTH, "", 9990, _ts(P_START), _ts(P_END), 3600, GRACE)
     with direct_vm.expect_revert("target"):
-        c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 10000, _ts(P_START), _ts(P_END), 3600)
+        c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 10000, _ts(P_START), _ts(P_END), 3600, GRACE)
     with direct_vm.expect_revert("period must"):
-        c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_END), _ts(P_START), 3600)
+        c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_END), _ts(P_START), 3600, GRACE)
     with direct_vm.expect_revert("probe interval"):
-        c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_START), _ts(P_END), 5)
+        c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_START), _ts(P_END), 5, GRACE)
+    with direct_vm.expect_revert("fallback_grace"):
+        c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_START), _ts(P_END), 3600, 60)
+    with direct_vm.expect_revert("fallback_grace"):
+        c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_START), _ts(P_END), 3600, 31 * 86400)
     sid = c.offer(_hex(direct_bob), *args)
+    assert c.get_sla(sid)["fallback_opens"] == _ts(P_END) + GRACE
     assert c.get_sla(sid)["status"] == "OFFERED" and c.get_sla_count() == 1
     assert c.credit_table()[-1] == ["more", 10000]
 
@@ -74,7 +80,7 @@ def test_accept_cancel_access(direct_vm, direct_deploy, direct_alice, direct_bob
     direct_vm.warp("2026-11-30T00:00:00Z")
     direct_vm.sender = direct_alice
     direct_vm.value = GEN
-    sid = c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_START), _ts(P_END), 3600)
+    sid = c.offer(_hex(direct_bob), "Acme API", SCOPE, STATUS, HEALTH, "", 9990, _ts(P_START), _ts(P_END), 3600, GRACE)
     direct_vm.sender = direct_charlie
     with direct_vm.expect_revert("named customer"):
         c.accept(sid)
@@ -221,3 +227,92 @@ def test_feed_errors_do_not_settle(direct_vm, direct_deploy, direct_alice, direc
     with direct_vm.expect_revert("HTTP 503"):
         c.assess(sid)
     assert c.get_sla(sid)["status"] == "ACTIVE"
+
+
+def test_fallback_not_before_grace_and_not_after_assess(direct_vm, direct_deploy, direct_alice, direct_bob):
+    c, sid = _active(direct_vm, direct_deploy, direct_alice, direct_bob)
+    direct_vm.warp("2027-01-06T23:59:00Z")
+    with direct_vm.expect_revert("fallback opens at"):
+        c.settle_fallback(sid)
+    _mock_feed(direct_vm, [])
+    c.assess(sid)
+    direct_vm.warp("2027-01-08T00:00:00Z")
+    with direct_vm.expect_revert("SLA not active"):
+        c.settle_fallback(sid)
+
+
+def test_fallback_no_probes_refunds_fee_and_returns_bond(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    c, sid = _active(direct_vm, direct_deploy, direct_alice, direct_bob)
+    direct_vm.warp("2027-01-02T00:00:00Z")
+    direct_vm.mock_web(r".*status\.example\.com.*", {"status": 503, "body": "down"})  # feed keeps failing
+    with direct_vm.expect_revert("HTTP 503"):
+        c.assess(sid)
+    direct_vm.clear_mocks()
+    direct_vm.warp("2027-01-07T00:00:00Z")
+    direct_vm.sender = direct_charlie  # anyone can trigger it; no web or LLM mocks needed
+    out = c.settle_fallback(sid)
+    assert out == {"mode": "fallback-no-probes", "credit_bps": 0, "to_customer": str(GEN), "to_provider": str(10 * GEN)}
+    s = c.get_sla(sid)
+    assert s["status"] == "SETTLED" and s["bond"] == "0" and s["fee"] == "0"
+    assert s["report"]["fee_refunded"] is True
+    with direct_vm.expect_revert("SLA not active"):
+        c.assess(sid)
+
+
+def test_fallback_uses_only_onchain_probes(direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie):
+    c, sid = _active(direct_vm, direct_deploy, direct_alice, direct_bob, interval=3600)
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "ok"})
+    for h in range(9):
+        direct_vm.warp(f"2026-12-10T{h:02d}:00:00Z")
+        assert c.probe(sid) is True
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 500, "body": "err"})
+    direct_vm.warp("2026-12-10T09:00:00Z")
+    assert c.probe(sid) is False
+    direct_vm.clear_mocks()
+    direct_vm.warp("2027-01-07T00:00:00Z")
+    direct_vm.sender = direct_charlie
+    out = c.settle_fallback(sid)
+    # sampled uptime 9/10 = 9000 bps (worse than 60 min / 43200 min) -> 990 short of 9990 -> 100 % credit
+    rep = c.get_sla(sid)["report"]
+    assert rep["mode"] == "fallback-probes-only" and rep["sampled_uptime_bps"] == 9000 and rep["uptime_bps"] == 9000
+    assert out["credit_bps"] == 10000 and out["to_customer"] == str(10 * GEN) and out["to_provider"] == str(GEN)
+
+
+def test_fallback_all_probes_up_pays_provider(direct_vm, direct_deploy, direct_alice, direct_bob):
+    c, sid = _active(direct_vm, direct_deploy, direct_alice, direct_bob, interval=3600)
+    direct_vm.mock_web(r".*api\.example\.com/health.*", {"status": 200, "body": "ok"})
+    direct_vm.warp("2026-12-10T00:00:00Z")
+    assert c.probe(sid) is True
+    direct_vm.clear_mocks()
+    direct_vm.warp("2027-01-07T00:00:00Z")
+    out = c.settle_fallback(sid)
+    assert out == {"mode": "fallback-probes-only", "credit_bps": 0, "to_customer": "0", "to_provider": str(11 * GEN)}
+
+
+def test_assess_validator_requires_identical_credit_tier(direct_vm, direct_deploy, direct_alice, direct_bob):
+    c, sid = _active(direct_vm, direct_deploy, direct_alice, direct_bob)
+    direct_vm.warp("2027-01-02T00:00:00Z")
+    _mock_feed(direct_vm, [_inc(1, "Big outage", "2026-12-10T00:00:00Z", "2026-12-10T20:00:00Z")])  # 1200 min, 25 %
+    _mock_classes(direct_vm, ["outage"])
+    c.assess(sid)
+    assert direct_vm.run_validator() is True
+
+    def leader(end, cls="outage"):
+        inc = [{"name": "Big outage", "start": _ts("2026-12-10T00:00:00Z"), "end": _ts(end), "class": cls, "why": ""}]
+        mins = (_ts(end) - _ts("2026-12-10T00:00:00Z")) // 60
+        if cls == "degraded":
+            mins //= 2
+        o = 10000 - (mins * 10000 + 43199) // 43200
+        tier = 0 if 9990 - o <= 0 else 1000 if 9990 - o <= 50 else 2500 if 9990 - o <= 400 else 5000 if 9990 - o <= 900 else 10000
+        return {"source": "statuspage-json", "incidents": inc, "outage_min": mins, "degraded_min": 0,
+                "weighted_min": mins, "downtime_min": mins, "period_min": 43200, "uptime_bps": o, "credit_bps": tier}
+
+    # same tier (25 %), downtime 1260 vs 1200 min: informational minutes within tolerance -> agree
+    assert direct_vm.run_validator(leader_result=leader("2026-12-10T21:00:00Z")) is True
+    # consistent but a different tier (10 %: 120 min) -> pays a different amount -> disagree
+    assert direct_vm.run_validator(leader_result=leader("2026-12-10T02:00:00Z")) is False
+    # tier does not follow from the leader's own incidents
+    bad = leader("2026-12-10T21:00:00Z")
+    bad["credit_bps"] = 1000
+    assert direct_vm.run_validator(leader_result=bad) is False

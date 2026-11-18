@@ -46,7 +46,7 @@ if (id === undefined) {
   console.log("provider", providerAcct.address, "customer (throwaway)", customerAcct.address, "period end", new Date(end * 1000).toISOString());
   await w(provider, "offer", [customerAcct.address, "GitHub core (demo)", SCOPE,
     "https://www.githubstatus.com/api/v2/incidents.json", "https://github.com/robots.txt", "User-agent",
-    9990, start, end, 60], 4n * GEN);
+    9990, start, end, 60, 900], 4n * GEN);  // fallback_grace 900 s: settle_fallback() opens 15 min after period end
   id = Number(await r("get_sla_count")) - 1;
   console.log("sla id", id);
   await w(customer, "accept", [id], GEN / 2n);

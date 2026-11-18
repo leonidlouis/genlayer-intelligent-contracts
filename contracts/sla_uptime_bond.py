@@ -30,9 +30,27 @@ Two kinds of evidence, both non-deterministic and both validator-checked:
    Custom validator: re-read the feed, re-classify, recompute, and agree only
    if the credit tier is identical, the leader's tier follows from the leader's
    own intervals, and weighted downtime is within max(90 min, 25 %).
+   The payout is bond x credit_bps, and credit_bps is one of a fixed set of
+   canonical tiers compared by EXACT equality, so every validator-compatible
+   result pays exactly the same amounts. The downtime tolerance only covers the
+   informational minutes in the report; downtime never sizes a payment except
+   through the exactly-compared tier.
 
 Settlement is immediate: the credit (a % of the bond) goes to the customer, the
 rest of the bond and the escrowed fee go to the provider.
+
+3. settle_fallback(id) - bounded fallback so a provider-controlled status feed
+   that stays unreachable, returns errors, or cannot be processed can never
+   lock the escrow. If assess() has not succeeded by period_end +
+   fallback_grace (agreed in the offer, FALLBACK_MIN..FALLBACK_MAX seconds),
+   anyone may call it. It is fully deterministic and never touches the feed
+   (no web access, no LLM): it uses only the probe record already on-chain.
+     - No probes recorded: the fee is refunded to the customer and the bond is
+       returned to the provider (nothing was measured, nobody is penalised).
+     - Otherwise: uptime = the worse of (a) the sampled share of successful
+       probes and (b) the period minus probe_interval per failed probe; the
+       credit tier comes from the same CREDIT_TIERS table; credit goes to the
+       customer, the rest of the bond and the fee to the provider.
 """
 import json
 import re
@@ -58,6 +76,8 @@ MAX_INCIDENTS = 40
 TEXT_CHARS = 9000
 TOL_MINUTES = 90
 TOL_PCT = 25
+FALLBACK_MIN = 900  # 15 minutes after period end
+FALLBACK_MAX = 30 * 86400
 MAX_FAIL_LOG = 50
 UA = {"User-Agent": "genlayer-sla-uptime-bond"}
 
@@ -93,6 +113,7 @@ class Sla:
     last_probe: u256
     fail_log_json: str  # [unix ts of failed probes]
     report_json: str  # assessment details
+    fallback_grace: u256  # seconds after period_end when settle_fallback() opens
 
 
 def _now() -> int:
@@ -185,6 +206,22 @@ def _outcome(reported_min: int, probe_min: int, p_start: int, p_end: int, target
     return {"downtime_min": down, "period_min": period_min, "uptime_bps": uptime, "credit_bps": _credit_bps(uptime, target_bps)}
 
 
+def _fallback_outcome(probes_total: int, probes_failed: int, probe_interval: int, p_start: int, p_end: int,
+                      target_bps: int) -> dict:
+    """Deterministic settlement from the on-chain probe record only (no feed, no LLM)."""
+    period_min = max(1, (p_end - p_start) // 60)
+    if probes_total <= 0:
+        return {"mode": "no-probes", "uptime_bps": None, "credit_bps": 0, "refund_fee": True, "period_min": period_min,
+                "probe_downtime_min": 0}
+    sampled = (probes_total - probes_failed) * 10000 // probes_total  # floor: ties favour the customer
+    probe_min = probes_failed * probe_interval // 60
+    by_minutes = _outcome(0, probe_min, p_start, p_end, target_bps)["uptime_bps"]
+    uptime = min(sampled, by_minutes)
+    return {"mode": "probes-only", "uptime_bps": uptime, "credit_bps": _credit_bps(uptime, target_bps),
+            "refund_fee": False, "period_min": period_min, "probe_downtime_min": min(period_min, probe_min),
+            "sampled_uptime_bps": sampled}
+
+
 def _parse_statuspage(body: str):
     """Statuspage /incidents.json -> list of incidents, or None if the body is not that format."""
     try:
@@ -228,7 +265,7 @@ class SlaUptimeBond(gl.Contract):
     @gl.public.write.payable
     def offer(
         self, customer: str, service: str, scope: str, status_url: str, health_url: str, health_expect: str,
-        target_bps: int, period_start: int, period_end: int, probe_interval: int,
+        target_bps: int, period_start: int, period_end: int, probe_interval: int, fallback_grace: int,
     ) -> int:
         if gl.message.value == u256(0):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} attach the bond")
@@ -253,6 +290,8 @@ class SlaUptimeBond(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} period already ended")
         if probe_interval < MIN_PROBE_INTERVAL or probe_interval > period_end - period_start:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} probe interval out of range")
+        if not (FALLBACK_MIN <= fallback_grace <= FALLBACK_MAX):
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} fallback_grace must be {FALLBACK_MIN}-{FALLBACK_MAX} seconds")
         sid = self.sla_count
         self.slas[sid] = Sla(
             provider=gl.message.sender_address, customer=cust, service=service, scope=scope,
@@ -260,6 +299,7 @@ class SlaUptimeBond(gl.Contract):
             target_bps=u256(target_bps), period_start=u256(period_start), period_end=u256(period_end),
             probe_interval=u256(probe_interval), bond=gl.message.value, fee=u256(0), status="OFFERED",
             probes_total=u256(0), probes_failed=u256(0), last_probe=u256(0), fail_log_json="[]", report_json="{}",
+            fallback_grace=u256(fallback_grace),
         )
         self.sla_count = u256(int(sid) + 1)
         return int(sid)
@@ -438,7 +478,8 @@ Classes: "outage" = an in-scope component was unavailable or failing for users;
                 return False  # leader's credit must follow from its own incident list
             mine = measure()
             if mine["credit_bps"] != lout["credit_bps"]:
-                return False
+                return False  # payout-determining tier: exact equality
+            # Informational only (never sizes a payment): reported downtime minutes.
             a, b = mine["weighted_min"], ldt["weighted_min"]
             return abs(a - b) <= max(TOL_MINUTES, max(a, b) * TOL_PCT // 100)
 
@@ -463,6 +504,7 @@ Classes: "outage" = an in-scope component was unavailable or failing for users;
             "credit_bps": credit_bps,
             "credit_wei": str(credit),
         }
+        report["mode"] = "assessed"
         s.report_json = json.dumps(report)
         s.status = "SETTLED"
         s.bond = u256(0)
@@ -472,6 +514,43 @@ Classes: "outage" = an in-scope component was unavailable or failing for users;
         if bond - credit + fee > 0:
             _Payee(s.provider).emit_transfer(value=u256(bond - credit + fee))
         return {"uptime_bps": report["uptime_bps"], "credit_bps": credit_bps, "downtime_min": report["downtime_min"]}
+
+    @gl.public.write
+    def settle_fallback(self, sla_id: int) -> dict:
+        """Bounded, feed-independent settlement once period_end + fallback_grace has passed without assess()."""
+        s = self._sla(sla_id)
+        if s.status != "ACTIVE":
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} SLA not active")
+        opens = int(s.period_end) + int(s.fallback_grace)
+        if _now() < opens:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} fallback opens at {opens}")
+        p_start, p_end, target = int(s.period_start), int(s.period_end), int(s.target_bps)
+        fo = _fallback_outcome(int(s.probes_total), int(s.probes_failed), int(s.probe_interval), p_start, p_end, target)
+        bond, fee = int(s.bond), int(s.fee)
+        credit = bond * int(fo["credit_bps"]) // 10000
+        to_customer = credit + (fee if fo["refund_fee"] else 0)
+        to_provider = bond - credit + (0 if fo["refund_fee"] else fee)
+        report = {
+            "mode": "fallback-" + fo["mode"],
+            "reason": "assess() did not succeed before period_end + fallback_grace; settled from on-chain probes only",
+            "probes_total": int(s.probes_total), "probes_failed": int(s.probes_failed),
+            "probe_downtime_min": int(fo["probe_downtime_min"]), "period_min": int(fo["period_min"]),
+            "uptime_bps": fo["uptime_bps"], "target_bps": target, "credit_bps": int(fo["credit_bps"]),
+            "credit_wei": str(credit), "fee_refunded": bool(fo["refund_fee"]),
+            "to_customer_wei": str(to_customer), "to_provider_wei": str(to_provider),
+        }
+        if "sampled_uptime_bps" in fo:
+            report["sampled_uptime_bps"] = int(fo["sampled_uptime_bps"])
+        s.report_json = json.dumps(report)
+        s.status = "SETTLED"
+        s.bond = u256(0)
+        s.fee = u256(0)
+        if to_customer > 0:
+            _Payee(s.customer).emit_transfer(value=u256(to_customer))
+        if to_provider > 0:
+            _Payee(s.provider).emit_transfer(value=u256(to_provider))
+        return {"mode": report["mode"], "credit_bps": report["credit_bps"], "to_customer": report["to_customer_wei"],
+                "to_provider": report["to_provider_wei"]}
 
     # ------------------------------------------------------------------ views
 
@@ -491,6 +570,8 @@ Classes: "outage" = an in-scope component was unavailable or failing for users;
             "period_start": int(s.period_start),
             "period_end": int(s.period_end),
             "probe_interval": int(s.probe_interval),
+            "fallback_grace": int(s.fallback_grace),
+            "fallback_opens": int(s.period_end) + int(s.fallback_grace),
             "bond": str(int(s.bond)),
             "fee": str(int(s.fee)),
             "status": s.status,
